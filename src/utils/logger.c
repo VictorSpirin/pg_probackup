@@ -48,7 +48,6 @@ void pg_log(eLogType type, const char *fmt,...) pg_attribute_printf(2, 3);
 static void elog_internal(int elevel, bool file_only, const char *message);
 static void elog_stderr(int elevel, const char *fmt, ...)
 						pg_attribute_printf(2, 3);
-static char *get_log_message(const char *fmt, va_list args) pg_attribute_printf(1, 0);
 
 /* Functions to work with log files */
 static void open_logfile(FILE **file, const char *filename_format);
@@ -408,37 +407,6 @@ elog_stderr(int elevel, const char *fmt, ...)
 }
 
 /*
- * Formats text data under the control of fmt and returns it in an allocated
- * buffer.
- */
-static char *
-get_log_message(const char *fmt, va_list args)
-{
-	size_t		len = 256;		/* initial assumption about buffer size */
-
-	for (;;)
-	{
-		char	   *result;
-		size_t		newlen;
-		va_list		copy_args;
-
-		result = (char *) pgut_malloc(len);
-
-		/* Try to format the data */
-		va_copy(copy_args, args);
-		newlen = pvsnprintf(result, len, fmt, copy_args);
-		va_end(copy_args);
-
-		if (newlen < len)
-			return result;		/* success */
-
-		/* Release buffer and loop around to try again with larger len. */
-		pfree(result);
-		len = newlen;
-	}
-}
-
-/*
  * Logs to stderr or to log file and exit if ERROR.
  */
 void
@@ -456,7 +424,7 @@ elog(int elevel, const char *fmt, ...)
 		return;
 
 	va_start(args, fmt);
-	message = get_log_message(fmt, args);
+	message = ft_vasprintf(fmt, args);
 	va_end(args);
 
 	elog_internal(elevel, false, message);
@@ -480,11 +448,59 @@ elog_file(int elevel, const char *fmt, ...)
 		return;
 
 	va_start(args, fmt);
-	message = get_log_message(fmt, args);
+	message = ft_vasprintf(fmt, args);
 	va_end(args);
 
 	elog_internal(elevel, true, message);
 	pfree(message);
+}
+
+/*
+ * Wrapper for ft_log
+ */
+void
+elog_ft_log(enum FT_LOG_LEVEL ft_level, ft_source_position_t srcpos,
+			const char* error, const char *fmt, va_list args)
+{
+#define MSG_MAX 4096
+	char	   	message[MSG_MAX];
+	int		elevel;
+
+	switch (ft_level)
+	{
+		case FT_TRACE:
+		case FT_DEBUG:
+			elevel = VERBOSE;
+			break;
+		case FT_LOG:
+			elevel = LOG;
+			break;
+		case FT_INFO:
+			elevel = INFO;
+			break;
+		case FT_WARNING:
+			elevel = WARNING;
+			break;
+		case FT_FATAL:
+		case FT_ERROR:
+			elevel = ERROR;
+			break;
+		default:
+			elevel = WARNING;
+	}
+
+	/*
+	 * Do not log message if severity level is less than log_level.
+	 * It is the little optimisation to put it here not in elog_internal().
+	 */
+	if (elevel < logger_config.log_level_console &&
+		elevel < logger_config.log_level_file && elevel < ERROR)
+		return;
+
+	/* don't use ft_vasprintf since it could recurse to logging */
+	vsnprintf(message, MSG_MAX, fmt, args);
+
+	elog_internal(elevel, false, message);
 }
 
 /*
@@ -526,7 +542,7 @@ pg_log(eLogType type, const char *fmt, ...)
 		return;
 
 	va_start(args, fmt);
-	message = get_log_message(fmt, args);
+	message = ft_vasprintf(fmt, args);
 	va_end(args);
 
 	elog_internal(elevel, false, message);

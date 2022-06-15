@@ -1045,9 +1045,15 @@ show_archive_json(const char *instance_name, uint32 xlog_seg_size,
 		appendPQExpBuffer(buf, "%lu", tlinfo->size);
 
 		json_add_key(buf, "zratio", json_level);
+
+		// forcing comma-based floating point representation
+		char *save_locale = setlocale(LC_NUMERIC, NULL);
+		setlocale(LC_NUMERIC, "POSIX");
 		if (tlinfo->size != 0)
 			zratio = ((float)xlog_seg_size*tlinfo->n_xlog_files) / tlinfo->size;
 		appendPQExpBuffer(buf, "%.2f", zratio);
+		// restoring previous locale
+		setlocale(LC_NUMERIC, save_locale);
 
 		if (tlinfo->closest_backup != NULL)
 			snprintf(tmp_buf, lengthof(tmp_buf), "%s",

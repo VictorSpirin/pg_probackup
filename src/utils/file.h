@@ -10,6 +10,8 @@
 #include <zlib.h>
 #endif
 
+#include <fo_obj.h>
+
 typedef enum
 {
 	/* message for compatibility check */
@@ -175,5 +177,118 @@ extern struct PageState *fio_get_checksum_map(fio_location location, const char 
 struct datapagemap; /* defined in datapagemap.h */
 extern struct datapagemap *fio_get_lsn_map(fio_location location, const char *fullpath, uint32 checksum_version,
 									  int n_blocks, XLogRecPtr horizonLsn, BlockNumber segmentno);
+
+
+// OBJECTS
+
+extern void init_pio_objects(void);
+
+typedef const char* path_t;
+typedef fobj_t pioFile_t;
+
+// Errors
+#define mth__pioErrno int
+fobj_method(pioErrno);
+
+typedef struct pioError pioError;
+#define kls__pioError inherits(fobjErr), mth(pioErrno)
+fobj_klass(pioError);
+
+extern fobjErr* newPioError(int _errno);
+extern int getErrno(fobjErr*);
+
+#ifdef HAVE_LIBZ
+#define mth__pioGZerrno int
+fobj_method(pioGZerrno);
+typedef struct pioGZError pioGZError;
+#define kls__pioGZError inherits(fobjErr), mth(pioGZerrno)
+fobj_klass(pioGZError);
+#endif
+
+
+// Drive
+#define mth__pioOpen pioFile_t, (path_t, path), (int, flags), \
+					(int, permissions), (fobjErr **, err)
+#define mth__pioOpen__optional() (permissions, FILE_PERMISSION)
+fobj_method(pioOpen);
+#define mth__pioStat struct stat, (path_t, path), (bool, follow_symlink), \
+					(fobjErr **, err)
+fobj_method(pioStat);
+#define mth__pioRemove fobjErr*, (path_t, path), (bool, missing_ok)
+fobj_method(pioRemove);
+#define mth__pioRename fobjErr*, (path_t, old_path), (path_t, new_path)
+fobj_method(pioRename);
+#define mth__pioExists bool, (path_t, path), (fobjErr **, err)
+fobj_method(pioExists);
+#define mth__pioGetCRC32 pg_crc32, (path_t, path), (bool, compressed), \
+					(fobjErr **, err)
+fobj_method(pioGetCRC32);
+#define mth__pioIsRemote bool
+fobj_method(pioIsRemote);
+
+#define iface__pioDrive mth(pioOpen, pioStat, pioRemove, pioRename), \
+						 mth(pioExists, pioGetCRC32, pioIsRemote)
+fobj_iface(pioDrive);
+
+#define kls__pioDrive	mth(pioExists)
+fobj_klass(pioDrive);
+#define pioDrive_common_methods mth(pioOpen, pioStat, pioRemove, pioRename), \
+								mth(pioGetCRC32, pioIsRemote)
+#define kls__pioLocalDrive	inherits(pioDrive), pioDrive_common_methods, \
+							iface(pioDrive)
+#define kls__pioRemoteDrive	inherits(pioDrive), pioDrive_common_methods, \
+							iface(pioDrive)
+fobj_klass(pioLocalDrive);
+fobj_klass(pioRemoteDrive);
+
+extern pioDrive_i pioDriveForLocation(fio_location location);
+
+// File
+#define mth__pioClose  fobjErr*, (bool, sync, true)
+#define mth__pioClose__optional() (sync, true)
+fobj_method(pioClose);
+#define mth__pioRead  ssize_t, (void*, buf), (size_t, size), \
+					(fobjErr **, err)
+fobj_method(pioRead);
+#define mth__pioWrite  ssize_t, (const void*, buf), (size_t, size), \
+					(fobjErr **, err)
+fobj_method(pioWrite);
+#define mth__pioAsyncWrite  ssize_t, (const void*, buf), (size_t, size)
+fobj_method(pioAsyncWrite);
+#define mth__pioAsyncError  fobjErr*
+fobj_method(pioAsyncError);
+
+#define iface__pioWriterCloser	mth(pioWrite, pioClose)
+#define iface__pioReaderCloser  mth(pioRead, pioClose)
+#define iface__pioAsyncWriterCloser	mth(pioAsyncWrite, pioAsyncError, pioClose)
+fobj_iface(pioWriterCloser);
+fobj_iface(pioReaderCloser);
+fobj_iface(pioAsyncWriterCloser);
+
+extern pioFile_t pioAsyncWriterToWriter(pioFile_t);
+
+#define kls__pioFile	mth(fobjDispose)
+fobj_klass(pioFile);
+#define pioFile__common_methods mth(pioRead, pioWrite, pioClose)
+
+#define kls__pioLocalFile	inherits(pioFile), pioFile__common_methods, \
+							iface(pioReaderCloser, pioWriterCloser)
+fobj_klass(pioLocalFile);
+
+#define kls__pioRemoteFile	inherits(pioFile), pioFile__common_methods, \
+						iface__pioAsyncWriterCloser,                    \
+                        mth(fobjDispose), \
+						iface(pioReaderCloser, pioWriterCloser), \
+						iface(pioAsyncWriterCloser)
+fobj_klass(pioRemoteFile);
+
+#ifdef HAVE_LIBZ
+#define kls__pioGZWriter	mth(fobjDispose), mth(pioWrite, pioClose)
+fobj_klass(pioGZWriter);
+#define kls__pioGZReader	mth(fobjDispose), mth(pioRead, pioClose)
+fobj_klass(pioGZReader);
+extern pioFile_t pioWrapGZWriter(pioFile_t fl, int level);
+extern pioFile_t pioWrapGZReader(pioFile_t fl);
+#endif
 
 #endif

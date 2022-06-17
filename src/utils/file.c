@@ -9,7 +9,6 @@
 #include "storage/checksum.h"
 
 #define PRINTF_BUF_SIZE  1024
-#define FILE_PERMISSIONS 0600
 
 static __thread unsigned long fio_fdset = 0;
 static __thread void* fio_stdin_buffer;
@@ -472,7 +471,7 @@ fio_open(fio_location location, const char* path, int mode)
 	}
 	else
 	{
-		fd = open(path, mode, FILE_PERMISSIONS);
+		fd = open(path, mode, FILE_PERMISSION);
 	}
 	return fd;
 }
@@ -1111,6 +1110,7 @@ fio_read(int fd, void* buf, size_t size)
 		IO_CHECK(fio_read_all(fio_stdin, &hdr, sizeof(hdr)), sizeof(hdr));
 		Assert(hdr.cop == FIO_SEND);
 		IO_CHECK(fio_read_all(fio_stdin, buf, hdr.size), hdr.size);
+		errno = hdr.arg;
 
 		return hdr.size;
 	}
@@ -1388,7 +1388,7 @@ fio_sync(fio_location location, const char* path)
 	{
 		int fd;
 
-		fd = open(path, O_WRONLY | PG_BINARY, FILE_PERMISSIONS);
+		fd = open(path, O_WRONLY | PG_BINARY, FILE_PERMISSION);
 		if (fd < 0)
 			return -1;
 
@@ -1709,7 +1709,7 @@ fio_gzopen(fio_location location, const char* path, const char* mode, int level)
 		/* check if file opened for writing */
 		if (strcmp(mode, PG_BINARY_W) == 0)
 		{
-			int fd = open(path, O_WRONLY | O_CREAT | O_EXCL | PG_BINARY, FILE_PERMISSIONS);
+			int fd = open(path, O_WRONLY | O_CREAT | O_EXCL | PG_BINARY, FILE_PERMISSION);
 			if (fd < 0)
 				return NULL;
 			file = gzdopen(fd, mode);
@@ -3384,7 +3384,7 @@ fio_communicate(int in, int out)
 			SYS_CHECK(closedir(dir[hdr.handle]));
 			break;
 		  case FIO_OPEN: /* Open file */
-			fd[hdr.handle] = open(buf, hdr.arg, FILE_PERMISSIONS);
+			fd[hdr.handle] = open(buf, hdr.arg, FILE_PERMISSION);
 			hdr.arg = fd[hdr.handle] < 0 ? errno : 0;
 			hdr.size = 0;
 			IO_CHECK(fio_write_all(out, &hdr, sizeof(hdr)), sizeof(hdr));
@@ -3407,9 +3407,11 @@ fio_communicate(int in, int out)
 				buf_size = hdr.arg;
 				buf = (char*)realloc(buf, buf_size);
 			}
+			errno = 0;
 			rc = read(fd[hdr.handle], buf, hdr.arg);
 			hdr.cop = FIO_SEND;
 			hdr.size = rc > 0 ? rc : 0;
+			hdr.arg = rc >= 0 ? 0 : errno;
 			IO_CHECK(fio_write_all(out, &hdr, sizeof(hdr)), sizeof(hdr));
 			if (hdr.size != 0)
 				IO_CHECK(fio_write_all(out, buf, hdr.size), hdr.size);
@@ -3473,7 +3475,7 @@ fio_communicate(int in, int out)
 			break;
 		  case FIO_SYNC:
 			/* open file and fsync it */
-			tmp_fd = open(buf, O_WRONLY | PG_BINARY, FILE_PERMISSIONS);
+			tmp_fd = open(buf, O_WRONLY | PG_BINARY, FILE_PERMISSION);
 			if (tmp_fd < 0)
 				hdr.arg = errno;
 			else
@@ -3541,4 +3543,924 @@ fio_communicate(int in, int out)
 		perror("read");
 		exit(EXIT_FAILURE);
 	}
+}
+
+// CLASSES
+typedef struct pioError {
+	fobjErr	p; /* parent */
+	int		_errno;
+} pioError;
+
+typedef struct pioDrive
+{
+} pioDrive;
+
+typedef struct pioLocalDrive
+{
+} pioLocalDrive;
+
+typedef struct pioRemoteDrive
+{
+} pioRemoteDrive;
+
+typedef struct pioFile
+{
+	const char *path;
+	int		flags;
+	bool	closed;
+} pioFile;
+
+typedef struct pioLocalFile
+{
+	pioFile	p;
+	int		fd;
+} pioLocalFile;
+
+typedef struct pioRemoteFile
+{
+	pioFile	p;
+	int		handle;
+	bool	didAsync;
+	fobjErr* async_error;
+} pioRemoteFile;
+
+typedef struct pioWriterAsyncWrapper {
+	pioAsyncWriterCloser_i wrapped;
+} pioWriterAsyncWrapper;
+
+#ifdef HAVE_LIBZ
+typedef struct pioGZError {
+	fobjErr	p; /* parent */
+	int		_gzerrno;
+} pioGZError;
+
+typedef struct pioGZStream {
+	z_stream strm;
+	bool	 closed;
+	bool     eof;
+	Bytef    buf[ZLIB_BUFFER_SIZE];
+} pioGZStream;
+
+typedef struct pioGZWriter {
+	pioWriterCloser_i	wrapped;
+	pioGZStream			*gz;
+} pioGZWriter;
+
+typedef struct pioGZReader {
+	pioReaderCloser_i	wrapped;
+	pioGZStream			*gz;
+} pioGZReader;
+#endif
+
+#define kls__pioWriterAsyncWrapper mth(fobjDispose), \
+								   mth(pioWrite, pioClose)
+fobj_klass(pioWriterAsyncWrapper);
+
+static pioDrive_i localDrive;
+static pioDrive_i remoteDrive;
+
+pioDrive_i
+pioDriveForLocation(fio_location loc)
+{
+	if (fio_is_remote(loc))
+		return remoteDrive;
+	else
+		return localDrive;
+}
+
+fobjErr*
+newPioError(int _errno)
+{
+	if (_errno == 0)
+		return NULL;
+	return (fobjErr*)$alloc(pioError,
+							.p = {.message = ft_strdup(ft_strerror(_errno))},
+						 	._errno = _errno);
+}
+
+int
+getErrno(fobjErr* err)
+{
+	int eno = 0;
+	$ifdef(eno =, pioErrno, err);
+	return eno;
+}
+
+static int
+pioError_pioErrno(VSelf)
+{
+	Self(pioError);
+	return self->_errno;
+}
+
+/* Base physical file type */
+
+static void
+pioFile_fobjDispose(VSelf)
+{
+	Self(pioFile);
+
+	if (!self->closed)
+		$(pioClose, self, false);
+	ft_free((void*)self->path);
+	self->path = NULL;
+}
+
+static bool
+pioDrive_pioExists(VSelf, path_t path, fobjErr* *err)
+{
+	Self(pioDrive);
+	struct stat buf;
+	fobj_reset_err(err);
+
+	/* follow symlink ? */
+	buf = $(pioStat, self, path, true, err);
+	if (getErrno(*err) == ENOENT)
+	{
+		*err = NULL;
+		return false;
+	}
+	if (!S_ISREG(buf.st_mode))
+		*err = fobj_error("file is not regular");
+	return *err == NULL;
+}
+
+/* LOCAL DRIVE */
+
+static pioFile_t
+pioLocalDrive_pioOpen(VSelf, path_t path, int flags,
+					  int permissions, fobjErr* *err)
+{
+	int	fd;
+	fobj_reset_err(err);
+
+	if (permissions == 0)
+		fd = open(path, flags, FILE_PERMISSION);
+	else
+		fd = open(path, flags, permissions);
+	if (fd < 0)
+	{
+		*err = newPioError(errno);
+		return NULL;
+	}
+	return $alloc(pioLocalFile, .fd = fd,
+				  .p = {.path = ft_strdup(path), .flags = flags });
+}
+
+static struct stat
+pioLocalDrive_pioStat(VSelf, path_t path, bool follow_symlink, fobjErr* *err)
+{
+	struct stat	st = {0};
+	int	r;
+	fobj_reset_err(err);
+
+	r = follow_symlink ? stat(path, &st) : lstat(path, &st);
+	if (r < 0)
+		*err = newPioError(errno);
+	return st;
+}
+
+static fobjErr*
+pioLocalDrive_pioRemove(VSelf, path_t path, bool missing_ok)
+{
+	if (remove_file_or_dir(path) != 0)
+	{
+		if (!missing_ok || errno != ENOENT)
+			return newPioError(errno);
+	}
+	return NULL;
+}
+
+static fobjErr*
+pioLocalDrive_pioRename(VSelf, path_t new_path, path_t topath)
+{
+	if (rename(new_path, topath) != 0)
+		return newPioError(errno);
+	return NULL;
+}
+
+static pg_crc32
+pioLocalDrive_pioGetCRC32(VSelf, path_t path, bool compressed, fobjErr* *err)
+{
+	fobj_reset_err(err);
+	elog(VERBOSE, "Local Drive calculate crc32 for '%s', compressed=%d",
+		 path, compressed);
+	if (compressed)
+		return pgFileGetCRCgz(path, true, true);
+	else
+		return pgFileGetCRC(path, true, true);
+}
+
+static bool
+pioLocalDrive_pioIsRemote(VSelf)
+{
+	return false;
+}
+
+/* LOCAL FILE */
+
+static fobjErr*
+pioLocalFile_pioClose(VSelf, bool sync)
+{
+	Self(pioLocalFile);
+	fobjErr*	err = NULL;
+	int r;
+
+	if (self->fd < 0)
+		return fobj_disposing(self) ? NULL : newPioError(EBADF);
+	if (sync && (self->p.flags & O_ACCMODE) != O_RDONLY)
+	{
+		r = fsync(self->fd);
+		if (r < 0)
+			err = newPioError(errno);
+	}
+	r = close(self->fd);
+	if (r < 0 && err == NULL)
+		err = newPioError(errno);
+	self->fd = -1;
+	self->p.closed = true;
+	return err;
+}
+
+static ssize_t
+pioLocalFile_pioRead(VSelf, void* buf, size_t size, fobjErr* *err)
+{
+	Self(pioLocalFile);
+	ssize_t r;
+	fobj_reset_err(err);
+
+	r = read(self->fd, buf, size);
+	if (r < 0)
+		*err = newPioError(errno);
+	return r;
+}
+
+static ssize_t
+pioLocalFile_pioWrite(VSelf, const void* buf, size_t size, fobjErr* *err)
+{
+	Self(pioLocalFile);
+	ssize_t r;
+	fobj_reset_err(err);
+
+	if (self->fd < 0)
+	{
+		*err = newPioError(EBADF);
+		return -1;
+	}
+
+	if (size == 0)
+		return 0;
+
+	r = durable_write(self->fd, buf, size);
+	if (r < 0)
+		*err = newPioError(errno);
+	return r;
+}
+
+/* REMOTE DRIVE */
+
+static pioFile_t
+pioRemoteDrive_pioOpen(VSelf, path_t path,
+					   int flags, int permissions,
+					   fobjErr* *err)
+{
+	int i;
+	fio_header hdr;
+	unsigned long mask;
+	fobj_reset_err(err);
+
+	mask = fio_fdset;
+	for (i = 0; (mask & 1) != 0; i++, mask >>= 1);
+	if (i == FIO_FDMAX)
+		elog(ERROR, "Descriptor pool for remote files is exhausted, "
+					"probably too many remote files are opened");
+
+	hdr.cop = FIO_OPEN;
+	hdr.handle = i;
+	hdr.size = strlen(path) + 1;
+	hdr.arg = flags;
+	fio_fdset |= 1 << i;
+
+	IO_CHECK(fio_write_all(fio_stdout, &hdr, sizeof(hdr)), sizeof(hdr));
+	IO_CHECK(fio_write_all(fio_stdout, path, hdr.size), hdr.size);
+
+	/* check results */
+	IO_CHECK(fio_read_all(fio_stdin, &hdr, sizeof(hdr)), sizeof(hdr));
+
+	if (hdr.arg != 0)
+	{
+		*err = newPioError((int)hdr.arg);
+		fio_fdset &= ~(1 << hdr.handle);
+		return NULL;
+	}
+	return $alloc(pioRemoteFile, .handle = i,
+				  .p = { .path = ft_strdup(path), .flags = flags });
+}
+
+static struct stat
+pioRemoteDrive_pioStat(VSelf, path_t path, bool follow_symlink, fobjErr* *err)
+{
+	struct stat	st = {0};
+	fio_header hdr = {
+			.cop = FIO_STAT,
+			.handle = -1,
+			.size = strlen(path) + 1,
+			.arg = follow_symlink,
+	};
+	fobj_reset_err(err);
+
+	IO_CHECK(fio_write_all(fio_stdout, &hdr, sizeof(hdr)), sizeof(hdr));
+	IO_CHECK(fio_write_all(fio_stdout, path, hdr.size), hdr.size);
+
+	IO_CHECK(fio_read_all(fio_stdin, &hdr, sizeof(hdr)), sizeof(hdr));
+	Assert(hdr.cop == FIO_STAT);
+	IO_CHECK(fio_read_all(fio_stdin, &st, sizeof(st)), sizeof(st));
+
+	if (hdr.arg != 0)
+	{
+		if (err != NULL)
+			*err = newPioError((int)hdr.arg);
+	}
+	return st;
+}
+
+static fobjErr*
+pioRemoteDrive_pioRemove(VSelf, path_t path, bool missing_ok)
+{
+	fio_header hdr = {
+			.cop = FIO_REMOVE,
+			.handle = -1,
+			.size = strlen(path) + 1,
+			.arg = missing_ok ? 1 : 0,
+	};
+
+	IO_CHECK(fio_write_all(fio_stdout, &hdr, sizeof(hdr)), sizeof(hdr));
+	IO_CHECK(fio_write_all(fio_stdout, path, hdr.size), hdr.size);
+
+	IO_CHECK(fio_read_all(fio_stdin, &hdr, sizeof(hdr)), sizeof(hdr));
+	Assert(hdr.cop == FIO_REMOVE);
+
+	return hdr.arg ? newPioError((int)hdr.arg) : NULL;
+}
+
+static fobjErr*
+pioRemoteDrive_pioRename(VSelf, path_t old_path, path_t new_path)
+{
+	size_t old_path_len = strlen(old_path) + 1;
+	size_t new_path_len = strlen(new_path) + 1;
+	fio_header hdr = {
+		.cop = FIO_RENAME,
+		.handle = -1,
+		.size = old_path_len + new_path_len,
+		.arg = 0,
+	};
+
+	IO_CHECK(fio_write_all(fio_stdout, &hdr, sizeof(hdr)), sizeof(hdr));
+	IO_CHECK(fio_write_all(fio_stdout, old_path, old_path_len), old_path_len);
+	IO_CHECK(fio_write_all(fio_stdout, new_path, new_path_len), new_path_len);
+
+	IO_CHECK(fio_read_all(fio_stdin, &hdr, sizeof(hdr)), sizeof(hdr));
+	Assert(hdr.cop == FIO_RENAME);
+
+	if (hdr.arg != 0)
+		return newPioError(hdr.arg);
+	return NULL;
+}
+
+static pg_crc32
+pioRemoteDrive_pioGetCRC32(VSelf, path_t path, bool compressed, fobjErr* *err)
+{
+	fio_header hdr;
+	size_t path_len = strlen(path) + 1;
+	pg_crc32 crc = 0;
+	fobj_reset_err(err);
+
+	hdr.cop = FIO_GET_CRC32;
+	hdr.handle = -1;
+	hdr.size = path_len;
+	hdr.arg = 0;
+
+	if (compressed)
+		hdr.arg = 1;
+	elog(VERBOSE, "Remote Drive calculate crc32 for '%s', hdr.arg=%d",
+		 path, compressed);
+
+	IO_CHECK(fio_write_all(fio_stdout, &hdr, sizeof(hdr)), sizeof(hdr));
+	IO_CHECK(fio_write_all(fio_stdout, path, path_len), path_len);
+	IO_CHECK(fio_read_all(fio_stdin, &crc, sizeof(crc)), sizeof(crc));
+
+	return crc;
+}
+
+static bool
+pioRemoteDrive_pioIsRemote(VSelf)
+{
+	return true;
+}
+
+/* REMOTE FILE */
+
+static fobjErr*
+pioRemoteFile_pioSync(VSelf)
+{
+	Self(pioRemoteFile);
+
+	fio_header hdr;
+	size_t path_len = strlen(self->p.path) + 1;
+	hdr.cop = FIO_SYNC;
+	hdr.handle = -1;
+	hdr.size = path_len;
+
+	IO_CHECK(fio_write_all(fio_stdout, &hdr, sizeof(hdr)), sizeof(hdr));
+	IO_CHECK(fio_write_all(fio_stdout, self->p.path, path_len), path_len);
+	IO_CHECK(fio_read_all(fio_stdin, &hdr, sizeof(hdr)), sizeof(hdr));
+
+	if (hdr.arg != 0)
+		return newPioError((int)hdr.arg);
+	return NULL;
+}
+
+static fobjErr*
+pioRemoteFile_pioClose(VSelf, bool sync)
+{
+	Self(pioRemoteFile);
+	fobjErr* err = NULL;
+	fio_header hdr;
+
+	if (self->handle < 0)
+		return fobj_disposing(self) ? NULL : newPioError(EBADF);
+	if (sync && (self->p.flags & O_ACCMODE) != O_RDONLY)
+		err = pioRemoteFile_pioSync(self);
+
+	hdr = (fio_header){
+		.cop = FIO_CLOSE,
+		.handle = self->handle,
+		.size = 0,
+		.arg = 0,
+	};
+
+	fio_fdset &= ~(1 << hdr.handle);
+	IO_CHECK(fio_write_all(fio_stdout, &hdr, sizeof(hdr)), sizeof(hdr));
+
+	/* Wait for response */
+	IO_CHECK(fio_read_all(fio_stdin, &hdr, sizeof(hdr)), sizeof(hdr));
+	Assert(hdr.cop == FIO_CLOSE);
+
+	if (hdr.arg != 0 && err == NULL)
+		err = newPioError((int)hdr.arg);
+
+	self->p.closed = true;
+
+	return err;
+}
+
+static ssize_t
+pioRemoteFile_pioRead(VSelf, void* buf, size_t size, fobjErr* *err)
+{
+	Self(pioRemoteFile);
+	fio_header hdr = {
+			.cop = FIO_READ,
+			.handle = self->handle,
+			.size = 0,
+			.arg = size,
+	};
+	fobj_reset_err(err);
+
+	IO_CHECK(fio_write_all(fio_stdout, &hdr, sizeof(hdr)), sizeof(hdr));
+
+	IO_CHECK(fio_read_all(fio_stdin, &hdr, sizeof(hdr)), sizeof(hdr));
+	Assert(hdr.cop == FIO_SEND);
+	IO_CHECK(fio_read_all(fio_stdin, buf, hdr.size), hdr.size);
+	if (hdr.arg != 0)
+		*err = newPioError(hdr.arg);
+
+	return hdr.size;
+}
+
+static ssize_t
+pioRemoteFile_pioWrite(VSelf, const void *buf, size_t size, fobjErr* *err)
+{
+	Self(pioRemoteFile);
+	fio_header hdr;
+	fobj_reset_err(err);
+
+	if (size == 0)
+		return 0;
+
+	hdr = (fio_header){
+		.cop = FIO_WRITE,
+		.handle = self->handle,
+		.size = size,
+		.arg = 0,
+	};
+
+	IO_CHECK(fio_write_all(fio_stdout, &hdr, sizeof(hdr)), sizeof(hdr));
+	IO_CHECK(fio_write_all(fio_stdout, buf, size), size);
+
+	/* check results */
+	IO_CHECK(fio_read_all(fio_stdin, &hdr, sizeof(hdr)), sizeof(hdr));
+	Assert(hdr.cop == FIO_WRITE);
+
+	/* set errno */
+	if (hdr.arg > 0)
+	{
+		*err = newPioError((int)hdr.arg);
+		return -1;
+	}
+
+	return (ssize_t)size;
+}
+
+static ssize_t
+pioRemoteFile_pioAsyncWrite(VSelf, const void *buf, size_t size)
+{
+	Self(pioRemoteFile);
+	fio_header hdr;
+
+	if (self->async_error != NULL)
+		return -1;
+
+	if (size == 0)
+		return 0;
+
+	hdr = (fio_header){
+		.cop = FIO_WRITE_ASYNC,
+		.handle = self->handle,
+		.size = size,
+		.arg = 0,
+	};
+
+	IO_CHECK(fio_write_all(fio_stdout, &hdr, sizeof(hdr)), sizeof(hdr));
+	IO_CHECK(fio_write_all(fio_stdout, buf, size), size);
+	self->didAsync = true;
+	return (ssize_t)size;
+}
+
+static fobjErr*
+pioRemoteFile_pioAsyncError(VSelf)
+{
+	Self(pioRemoteFile);
+	char *errmsg;
+	fio_header hdr;
+
+	if (self->async_error != NULL || !self->didAsync)
+	{
+		self->didAsync = false;
+		return self->async_error;
+	}
+
+	hdr.cop = FIO_GET_ASYNC_ERROR;
+	hdr.size = 0;
+
+	IO_CHECK(fio_write_all(fio_stdout, &hdr, sizeof(hdr)), sizeof(hdr));
+
+	/* check results */
+	IO_CHECK(fio_read_all(fio_stdin, &hdr, sizeof(hdr)), sizeof(hdr));
+
+	if (hdr.size == 0)
+		return NULL;
+
+	errmsg = pgut_malloc(ERRMSG_MAX_LEN);
+	IO_CHECK(fio_read_all(fio_stdin, errmsg, hdr.size), hdr.size);
+	self->async_error = fobj_error(errmsg);
+	self->didAsync = false;
+	free(errmsg);
+	return self->async_error;
+}
+
+static void
+pioRemoteFile_fobjDispose(VSelf)
+{
+	Self(pioRemoteFile);
+	$del(&self->async_error);
+}
+
+pioFile_t
+pioAsyncWriterToWriter(pioFile_t file)
+{
+	return $alloc(pioWriterAsyncWrapper,
+			  .wrapped = bindref_pioAsyncWriterCloser(file));
+}
+
+static ssize_t
+pioWriterAsyncWrapper_pioWrite(VSelf, const void *buf, size_t size,
+							   fobjErr* *err)
+{
+	Self(pioWriterAsyncWrapper);
+	fobj_reset_err(err);
+	return $i(pioAsyncWrite, self->wrapped, buf, size);
+}
+
+static fobjErr*
+pioWriterAsyncWrapper_pioClose(VSelf, bool sync)
+{
+	Self(pioWriterAsyncWrapper);
+	fobjErr	*err, *err2;
+
+	err = $i(pioAsyncError, self->wrapped);
+	err2 = $i(pioClose, self->wrapped, sync);
+
+	return fobj_err_combine(err, err2);
+}
+
+static void
+pioWriterAsyncWrapper_fobjDispose(VSelf)
+{
+	Self(pioWriterAsyncWrapper);
+	$del(&self->wrapped.self);
+}
+
+#ifdef HAVE_LIBZ
+static fobjErr* newGZError(const char *gzmsg, int gzerrno, int _errno);
+
+static int
+pioGZError_pioGZerrno(VSelf)
+{
+	Self(pioGZError);
+	return self->_gzerrno;
+}
+
+fobjErr*
+newGZError(const char *gzmsg, int gzerrno, int _errno)
+{
+	if (gzerrno == Z_OK && _errno == 0)
+		return NULL;
+	if (gzerrno == Z_ERRNO)
+		return (fobjErr*) newPioError(_errno);
+	return (fobjErr*) $alloc(pioGZError,
+							 .p={.message=ft_strdup(gzmsg)},
+							 ._gzerrno = gzerrno);
+}
+
+pioFile_t
+pioWrapGZWriter(pioFile_t fl, int level)
+{
+	pioGZStream *gz = ft_malloc(sizeof(pioGZStream));
+	int	rc;
+
+	memset(gz, 0, sizeof(*gz));
+
+	gz->strm.next_out = gz->buf;
+	gz->strm.avail_out = ZLIB_BUFFER_SIZE;
+	rc = deflateInit2(&gz->strm,
+					  level,
+					  Z_DEFLATED,
+					  MAX_WBITS + 16, DEF_MEM_LEVEL,
+					  Z_DEFAULT_STRATEGY);
+	if (rc != Z_OK)
+	{
+		ft_free(gz);
+		elog(ERROR, "zlib internal error: %s", gz->strm.msg);
+	}
+	return $alloc(pioGZWriter,
+				  .wrapped = bindref_pioWriterCloser(fl),
+				  .gz = gz);
+}
+
+pioFile_t
+pioWrapGZReader(pioFile_t fl)
+{
+	pioGZStream *gz = ft_malloc(sizeof(pioGZStream));
+	int	rc;
+
+	memset(gz, 0, sizeof(*gz));
+
+	gz->strm.next_in = gz->buf;
+	gz->strm.avail_in = 0;
+	rc = inflateInit2(&gz->strm, 15 + 16);
+	if (rc != Z_OK)
+	{
+		ft_free(gz);
+		elog(ERROR, "zlib internal error: %s", gz->strm.msg);
+	}
+
+	return $alloc(pioGZReader,
+				  .wrapped = bindref_pioReaderCloser(fl),
+				  .gz = gz);
+}
+
+static ssize_t
+pioGZWriter_pioWrite(VSelf, const void *buf, size_t size, fobjErr* *err)
+{
+	Self(pioGZWriter);
+	pioGZStream *gz = self->gz;
+	size_t	out_size;
+	ssize_t rc;
+	fobj_reset_err(err);
+
+	if (gz->closed)
+	{
+		if (err)
+			*err = newPioError(EBADF);
+		return -1;
+	}
+
+	if (size == 0)
+		return 0;
+
+	*err = NULL;
+	gz->strm.next_in = (Bytef *)buf;
+	gz->strm.avail_in = size;
+
+	do
+	{
+		if (gz->strm.avail_out == ZLIB_BUFFER_SIZE) /* Compress buffer is empty */
+		{
+			gz->strm.next_out = gz->buf; /* Reset pointer to the  beginning of buffer */
+
+			if (gz->strm.avail_in != 0) /* Has something in input buffer */
+			{
+				rc = deflate(&gz->strm, Z_NO_FLUSH);
+				Assert(rc == Z_OK);
+				gz->strm.next_out = gz->buf; /* Reset pointer to the  beginning of buffer */
+			}
+			else
+			{
+				break;
+			}
+		}
+		out_size = ZLIB_BUFFER_SIZE - gz->strm.avail_out;
+		rc = $i(pioWrite, self->wrapped, gz->strm.next_out, out_size, err);
+		if (rc < 0)
+			return rc;
+		gz->strm.next_out += rc;
+		gz->strm.avail_out += rc;
+		/* our write interface have to write all buffer */
+		Assert(gz->strm.avail_out == ZLIB_BUFFER_SIZE);
+	} while (gz->strm.avail_out != ZLIB_BUFFER_SIZE || gz->strm.avail_in != 0);
+
+	return (ssize_t)size;
+}
+
+static fobjErr*
+pioGZWriter_pioClose(VSelf, bool sync)
+{
+	Self(pioGZWriter);
+	pioGZStream *gz = self->gz;
+	fobjErr* writeErr = NULL;
+	fobjErr* err = NULL;
+	size_t size;
+	ssize_t rc;
+
+	if (gz->closed)
+		return fobj_disposing(self) ? NULL : newPioError(EBADF);
+
+	if (!fobj_disposing(self))
+	{
+		gz->strm.next_out = gz->buf;
+		rc = deflate(&gz->strm, Z_FINISH);
+		Assert(rc == Z_STREAM_END && gz->strm.avail_out != ZLIB_BUFFER_SIZE);
+		rc = deflateEnd(&gz->strm);
+		Assert(rc == Z_OK);
+
+		size = ZLIB_BUFFER_SIZE - gz->strm.avail_out;
+		rc = $i(pioWrite, self->wrapped, gz->buf, size, &writeErr);
+		Assert(rc == ZLIB_BUFFER_SIZE - gz->strm.avail_out || writeErr != NULL);
+	}
+
+	err = $i(pioClose, self->wrapped, sync);
+	err = fobj_err_combine(writeErr, err);
+
+	gz->closed = true;
+
+	return err;
+}
+
+static void
+pioGZWriter_fobjDispose(VSelf)
+{
+	Self(pioGZWriter);
+	if (!self->gz->closed)
+	{
+		$i(pioClose, self->wrapped, false);
+		self->gz->closed = true;
+	}
+	$del(&self->wrapped.self);
+	ft_free(self->gz);
+	self->gz = NULL;
+}
+
+static ssize_t
+pioGZReader_pioRead(VSelf, void *buf, size_t size, fobjErr* *err)
+{
+	Self(pioGZReader);
+	pioGZStream *gz = self->gz;
+	Bytef*	cur_buf;
+	size_t	cur_size;
+	int		rc;
+	fobj_reset_err(err);
+
+	if (gz->closed)
+	{
+		if (err)
+			*err = newPioError(EBADF);
+		return -1;
+	}
+
+	if (gz->eof)
+		return 0;
+
+	gz->strm.next_out = (Bytef *)buf;
+	gz->strm.avail_out = size;
+
+	while (1)
+	{
+		if (gz->strm.avail_in != 0) /* If there is some data in receiver buffer, then decompress it */
+		{
+			rc = inflate(&gz->strm, Z_NO_FLUSH);
+			if (rc == Z_STREAM_END)
+			{
+				gz->eof = 1;
+			}
+			else if (rc != Z_OK)
+			{
+				if (err != NULL)
+					*err = newGZError(gz->strm.msg, rc, errno);
+				return -1;
+			}
+			if (gz->strm.avail_out != size)
+			{
+				return (ssize_t)(size - gz->strm.avail_out);
+			}
+		}
+
+		if (gz->strm.avail_in == 0)
+		{
+			gz->strm.next_in = gz->buf;
+		}
+
+
+		cur_buf = gz->strm.next_in + gz->strm.avail_in;
+		cur_size = (gz->buf + ZLIB_BUFFER_SIZE) - cur_buf;
+		rc = $i(pioRead, self->wrapped, cur_buf, cur_size, err);
+		if (rc < 0)
+			return rc;
+		if (rc == 0)
+		{
+			gz->eof = 1;
+			return 0;
+		}
+		Assert(*err == NULL);
+		gz->strm.avail_in += rc;
+	}
+}
+
+static fobjErr*
+pioGZReader_pioClose(VSelf, bool sync)
+{
+	Self(pioGZReader);
+	pioGZStream *gz = self->gz;
+	fobjErr* err = NULL;
+	ssize_t rc;
+
+	if (gz->closed)
+		return NULL;
+
+	if (!fobj_disposing(self))
+	{
+		rc = inflateEnd(&gz->strm);
+		Assert(rc == Z_OK);
+	}
+
+	err = $i(pioClose, self->wrapped, sync);
+	gz->closed = true;
+	return err;
+}
+
+static void
+pioGZReader_fobjDispose(VSelf)
+{
+	Self(pioGZReader);
+	if (!self->gz->closed)
+	{
+		$i(pioClose, self->wrapped, false);
+		self->gz->closed = true;
+	}
+	$del(&self->wrapped.self);
+	ft_free(self->gz);
+}
+#endif
+
+fobj_klass_handle(pioFile);
+fobj_klass_handle(pioError);
+fobj_klass_handle(pioDrive);
+fobj_klass_handle(pioLocalDrive);
+fobj_klass_handle(pioRemoteDrive);
+fobj_klass_handle(pioLocalFile);
+fobj_klass_handle(pioRemoteFile);
+fobj_klass_handle(pioWriterAsyncWrapper);
+
+#ifdef HAVE_LIBZ
+fobj_klass_handle(pioGZError);
+fobj_klass_handle(pioGZWriter);
+fobj_klass_handle(pioGZReader);
+#endif
+
+void
+init_pio_objects(void)
+{
+	FOBJ_FUNC_ARP();
+
+	localDrive = bindref_pioDrive($alloc(pioLocalDrive));
+	remoteDrive = bindref_pioDrive($alloc(pioRemoteDrive));
 }

@@ -297,6 +297,7 @@ main(int argc, char *argv[])
 
 	ft_log_hook = elog_ft_log;
 	fobj_init();
+	init_pio_objects();
 
 	PROGRAM_NAME_FULL = argv[0];
 

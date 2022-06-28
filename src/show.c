@@ -1046,16 +1046,35 @@ show_archive_json(const char *instance_name, uint32 xlog_seg_size,
 		appendPQExpBuffer(buf, "%lu", tlinfo->size);
 
 		json_add_key(buf, "zratio", json_level);
+
 		// forcing comma-based floating point representation
-		locale_t newloc = newlocale(LC_NUMERIC_MASK, "POSIX", (locale_t)0);
-		locale_t saveloc = uselocale(newloc);
+		locale_t saveloc;
+#ifdef HAVE_USELOCALE
+		locale_t newloc = newlocale(LC_NUMERIC_MASK, "C", (locale_t)0);
+		saveloc = uselocale(newloc);
+#else
+#ifdef HAVE__CONFIGTHREADLOCALE
+		locale_t oldthreadlocale = _configthreadlocale(_ENABLE_PER_THREAD_LOCALE);
+#endif
+		saveloc = setlocale(LC_NUMERIC, NULL);
+		setlocale(LC_NUMERIC, "C");
+#endif
 		if (tlinfo->size != 0)
 			zratio = ((float)xlog_seg_size*tlinfo->n_xlog_files) / tlinfo->size;
 		appendPQExpBuffer(buf, "%.2f", zratio);
+
 		// restoring previous locale
+#ifdef HAVE_USELOCALE
 		if(saveloc != (locale_t)0)
 			uselocale(saveloc);
 		freelocale(newloc);
+#else
+		setlocale(LC_NUMERIC, saveloc);
+#ifdef HAVE__CONFIGTHREADLOCALE
+		if(oldthreadlocale != -1)
+			_configthreadlocale(oldthreadlocale);
+#endif
+#endif
 
 		if (tlinfo->closest_backup != NULL)
 			snprintf(tmp_buf, lengthof(tmp_buf), "%s",

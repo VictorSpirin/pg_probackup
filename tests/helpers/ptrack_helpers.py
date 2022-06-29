@@ -89,22 +89,14 @@ def dir_files(base_dir):
 
 def is_enterprise():
     # pg_config --help
-    if os.name == 'posix':
-        cmd = [os.environ['PG_CONFIG'], '--pgpro-edition']
-
-    elif os.name == 'nt':
-        cmd = [[os.environ['PG_CONFIG']], ['--pgpro-edition']]
+    cmd = [os.environ['PG_CONFIG'], '--help']
 
     p = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
-    if b'enterprise' in p.communicate()[0]:
-        return True
-    else:
-        return False
-
+    return b'postgrespro.ru' in p.communicate()[0]
 
 class ProbackupException(Exception):
     def __init__(self, message, cmd):
@@ -151,6 +143,7 @@ def slow_start(self, replica=False):
 class ProbackupTest(object):
     # Class attributes
     enterprise = is_enterprise()
+    enable_nls = is_nls_enabled()
 
     def __init__(self, *args, **kwargs):
         super(ProbackupTest, self).__init__(*args, **kwargs)

@@ -13,11 +13,11 @@ if (($#ARGV+1)==1)
 {
 	$pgsrc = shift @ARGV;
 	if($pgsrc eq "--help"){
-		print STDERR "Usage $0 pg-source-dir\n";
-		print STDERR "Like this:\n";
-		print STDERR "$0 C:/PgProject/postgresql.10dev/postgrespro\n";
-		print STDERR "May need to run this first:\n";
-		print STDERR "CALL \"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat\" amd64\n";
+		print STDERR "Usage $0 pg-source-dir \n";
+		print STDERR "Like this: \n";
+		print STDERR "$0 C:/PgProject/postgresql.10dev/postgrespro \n";
+		print STDERR "May be need input this before:  \n";
+		print STDERR "CALL \"C:\\Program Files (x86)\\Microsoft Visual Studio 12.0\\VC\\vcvarsall\" amd64\n";
 		exit 1;
 	}
 }
@@ -133,7 +133,7 @@ sub build_pgprobackup
 	  unless (-d 'src/tools/msvc' && -d 'src');
 
 	# my $vsVersion = DetermineVisualStudioVersion();
-	my $vsVersion = '16.00';
+	my $vsVersion = '12.00';
 
 	$solution = CreateSolution($vsVersion, $config);
 
@@ -152,39 +152,39 @@ sub build_pgprobackup
 	$probackup->AddDefine('FRONTEND');
 	$probackup->AddFiles(
 		"$currpath/src", 
-		'archive.c',
-		'backup.c',
-		'catalog.c',
-		'catchup.c',
-		'configure.c',
-		'data.c',
-		'delete.c',
-		'dir.c',
-		'fetch.c',
-		'help.c',
-		'init.c',
-		'merge.c',
-		'parsexlog.c',
-		'pg_probackup.c',
-		'restore.c',
-		'show.c',
-		'stream.c',
-		'util.c',
-		'validate.c',
-		'checkdb.c',
-		'ptrack.c'
+		'archive.cpp',
+		'backup.cpp',
+		'catalog.cpp',
+		'catchup.cpp',
+		'configure.cpp',
+		'data.cpp',
+		'delete.cpp',
+		'dir.cpp',
+		'fetch.cpp',
+		'help.cpp',
+		'init.cpp',
+		'merge.cpp',
+		'parsexlog.cpp',
+		'pg_probackup.cpp',
+		'restore.cpp',
+		'show.cpp',
+		'stream.cpp',
+		'util.cpp',
+		'validate.cpp',
+		'checkdb.cpp',
+		'ptrack.cpp'
 		);
 	$probackup->AddFiles(
 		"$currpath/src/utils",
-		'configuration.c',
-		'file.c',
-		'remote.c',
-		'json.c',
-		'logger.c',
-		'parray.c',
-		'pgut.c',
-		'thread.c',
-		'remote.c'
+		'configuration.cpp',
+		'file.cpp',
+		'remote.cpp',
+		'json.cpp',
+		'logger.cpp',
+		'parray.cpp',
+		'pgut.cpp',
+		'thread.cpp',
+		'remote.cpp'
 		);
 	$probackup->AddFile("$pgsrc/src/backend/access/transam/xlogreader.c");
 	$probackup->AddFile("$pgsrc/src/backend/utils/hash/pg_crc.c");

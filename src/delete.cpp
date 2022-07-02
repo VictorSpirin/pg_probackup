@@ -544,7 +544,7 @@ do_retention_merge(InstanceState *instanceState, parray *backup_list,
 		 *
 		 * Merge incremental chain from PAGE3 into FULL.
 		 */
-		keep_backup = parray_get(merge_list, 0);
+		keep_backup = (pgBackup*)parray_get(merge_list, 0);
 		merge_chain(instanceState, merge_list, full_backup, keep_backup, no_validate, no_sync);
 		backup_merged = true;
 

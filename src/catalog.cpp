@@ -274,7 +274,7 @@ lock_backup(pgBackup *backup, bool strict, bool exclusive)
 	}
 
 	/* save lock metadata for later unlocking */
-	lock = pgut_malloc(sizeof(LockInfo));
+	lock = (LockInfo*)pgut_malloc(sizeof(LockInfo));
 	snprintf(lock->backup_id, 10, "%s", base36enc(backup->backup_id));
 	snprintf(lock->backup_dir, MAXPGPATH, "%s", backup->root_dir);
 	lock->exclusive = exclusive;
@@ -825,7 +825,7 @@ pgBackupGetBackupMode(pgBackup *backup, bool show_color)
 	if (show_color)
 	{
 		/* color the Backup mode */
-		char *mode = pgut_malloc(24); /* leaking memory here */
+		char *mode = (char *) pgut_malloc(24); /* leaking memory here */
 
 		if (backup->backup_mode == BACKUP_MODE_FULL)
 			snprintf(mode, 24, "%s%s%s", TC_GREEN_BOLD, backupModes[backup->backup_mode], TC_RESET);
@@ -975,7 +975,7 @@ catalog_get_backup_list(InstanceState *instanceState, time_t requested_backup_id
 
 		backup->root_dir = pgut_strdup(data_path);
 
-		backup->database_dir = pgut_malloc(MAXPGPATH);
+		backup->database_dir = (char *) pgut_malloc(MAXPGPATH);
 		join_path_components(backup->database_dir, backup->root_dir, DATABASE_DIR);
 
 		/* Initialize page header map */
@@ -1007,7 +1007,7 @@ catalog_get_backup_list(InstanceState *instanceState, time_t requested_backup_id
 	/* Link incremental backups with their ancestors.*/
 	for (i = 0; i < parray_num(backups); i++)
 	{
-		pgBackup   *curr = parray_get(backups, i);
+		pgBackup   *curr = (pgBackup*)parray_get(backups, i);
 		pgBackup  **ancestor;
 		pgBackup	key;
 
@@ -1449,7 +1449,7 @@ pgBackupCreateDir(pgBackup *backup, const char *backup_instance_path)
 	if (backup->backup_id == 0)
 		elog(ERROR, "Cannot create backup directory: %s", strerror(errno));
 
-	backup->database_dir = pgut_malloc(MAXPGPATH);
+	backup->database_dir = (char *) pgut_malloc(MAXPGPATH);
 	join_path_components(backup->database_dir, backup->root_dir, DATABASE_DIR);
 
 	/* block header map */
@@ -1460,7 +1460,7 @@ pgBackupCreateDir(pgBackup *backup, const char *backup_instance_path)
 	{
 		char	path[MAXPGPATH];
 
-		join_path_components(path, backup->root_dir, parray_get(subdirs, i));
+		join_path_components(path, backup->root_dir, (const char *) parray_get(subdirs, i));
 		fio_mkdir(path, DIR_PERMISSION, FIO_BACKUP_HOST);
 	}
 
@@ -1574,7 +1574,7 @@ catalog_get_timelines(InstanceState *instanceState, InstanceConfig *instance)
 					}
 
 					/* append file to xlog file list */
-					wal_file = palloc(sizeof(xlogFile));
+					wal_file = (xlogFile *) palloc(sizeof(xlogFile));
 					wal_file->file = *file;
 					wal_file->segno = segno;
 					wal_file->type = BACKUP_HISTORY_FILE;
@@ -1595,7 +1595,7 @@ catalog_get_timelines(InstanceState *instanceState, InstanceConfig *instance)
 					}
 
 					/* append file to xlog file list */
-					wal_file = palloc(sizeof(xlogFile));
+					wal_file = (xlogFile*)palloc(sizeof(xlogFile));
 					wal_file->file = *file;
 					wal_file->segno = segno;
 					wal_file->type = PARTIAL_SEGMENT;
@@ -1616,7 +1616,7 @@ catalog_get_timelines(InstanceState *instanceState, InstanceConfig *instance)
 					}
 
 					/* append file to xlog file list */
-					wal_file = palloc(sizeof(xlogFile));
+					wal_file = (xlogFile*)palloc(sizeof(xlogFile));
 					wal_file->file = *file;
 					wal_file->segno = segno;
 					wal_file->type = TEMP_SEGMENT;
@@ -1657,7 +1657,7 @@ catalog_get_timelines(InstanceState *instanceState, InstanceConfig *instance)
 				 */
 				if (segno != expected_segno && segno != tlinfo->end_segno)
 				{
-					xlogInterval *interval = palloc(sizeof(xlogInterval));;
+					xlogInterval *interval = (xlogInterval*)palloc(sizeof(xlogInterval));;
 					interval->begin_segno = expected_segno;
 					interval->end_segno = segno - 1;
 
@@ -1678,7 +1678,7 @@ catalog_get_timelines(InstanceState *instanceState, InstanceConfig *instance)
 			tlinfo->size += file->size;
 
 			/* append file to xlog file list */
-			wal_file = palloc(sizeof(xlogFile));
+			wal_file = (xlogFile*)palloc(sizeof(xlogFile));
 			wal_file->file = *file;
 			wal_file->segno = segno;
 			wal_file->type = SEGMENT;
@@ -1733,10 +1733,10 @@ catalog_get_timelines(InstanceState *instanceState, InstanceConfig *instance)
 
 	for (i = 0; i < parray_num(timelineinfos); i++)
 	{
-		timelineInfo *tlinfo = parray_get(timelineinfos, i);
+		timelineInfo *tlinfo = (timelineInfo*)parray_get(timelineinfos, i);
 		for (j = 0; j < parray_num(backups); j++)
 		{
-			pgBackup *backup = parray_get(backups, j);
+			pgBackup *backup = (pgBackup*)parray_get(backups, j);
 			if (tlinfo->tli == backup->tli)
 			{
 				if (tlinfo->backups == NULL)
@@ -1750,7 +1750,7 @@ catalog_get_timelines(InstanceState *instanceState, InstanceConfig *instance)
 	/* determine oldest backup and closest backup for every timeline */
 	for (i = 0; i < parray_num(timelineinfos); i++)
 	{
-		timelineInfo *tlinfo = parray_get(timelineinfos, i);
+		timelineInfo *tlinfo = (timelineInfo*)parray_get(timelineinfos, i);
 
 		tlinfo->oldest_backup = get_oldest_backup(tlinfo);
 		tlinfo->closest_backup = get_closest_backup(tlinfo);
@@ -1823,7 +1823,7 @@ catalog_get_timelines(InstanceState *instanceState, InstanceConfig *instance)
 	for (i = 0; i < parray_num(timelineinfos); i++)
 	{
 		int count = 0;
-		timelineInfo *tlinfo = parray_get(timelineinfos, i);
+		timelineInfo *tlinfo = (timelineInfo*)parray_get(timelineinfos, i);
 
 		/*
 		 * Iterate backward on backups belonging to this timeline to find
@@ -1834,7 +1834,7 @@ catalog_get_timelines(InstanceState *instanceState, InstanceConfig *instance)
 		{
 			for (j = 0; j < parray_num(tlinfo->backups); j++)
 			{
-				pgBackup *backup = parray_get(tlinfo->backups, j);
+				pgBackup *backup = (pgBackup*)parray_get(tlinfo->backups, j);
 
 				/* sanity */
 				if (XLogRecPtrIsInvalid(backup->start_lsn) ||
@@ -1965,7 +1965,7 @@ catalog_get_timelines(InstanceState *instanceState, InstanceConfig *instance)
 					tlinfo->keep_segments = parray_new();
 
 				/* in any case, switchpoint segment must be added to interval */
-				interval = palloc(sizeof(xlogInterval));
+				interval = (xlogInterval*)palloc(sizeof(xlogInterval));
 				GetXLogSegNo(switchpoint, interval->end_segno, instance->xlog_seg_size);
 
 				/* Save [S1`, S2] to keep_segments */
@@ -2000,7 +2000,7 @@ catalog_get_timelines(InstanceState *instanceState, InstanceConfig *instance)
 		{
 			XLogSegNo   segno = 0;
 			xlogInterval *interval = NULL;
-			pgBackup *backup = parray_get(tlinfo->backups, j);
+			pgBackup *backup = (pgBackup*)parray_get(tlinfo->backups, j);
 
 			/*
 			 * We must calculate keep_segments intervals for ARCHIVE backups
@@ -2021,7 +2021,7 @@ catalog_get_timelines(InstanceState *instanceState, InstanceConfig *instance)
 				continue;
 
 			/* append interval to keep_segments */
-			interval = palloc(sizeof(xlogInterval));
+			interval = (xlogInterval*)palloc(sizeof(xlogInterval));
 			GetXLogSegNo(backup->start_lsn, segno, instance->xlog_seg_size);
 			interval->begin_segno = segno;
 			GetXLogSegNo(backup->stop_lsn, segno, instance->xlog_seg_size);
@@ -2059,7 +2059,7 @@ catalog_get_timelines(InstanceState *instanceState, InstanceConfig *instance)
 	for (i = 0; i < parray_num(timelineinfos); i++)
 	{
 		XLogSegNo   anchor_segno = 0;
-		timelineInfo *tlinfo = parray_get(timelineinfos, i);
+		timelineInfo *tlinfo = (timelineInfo*)parray_get(timelineinfos, i);
 
 		/*
 		 * At this point invalid anchor_lsn can be only in one case:
@@ -2133,7 +2133,7 @@ get_closest_backup(timelineInfo *tlinfo)
 		{
 			for (i = 0; i < parray_num(backup_list); i++)
 			{
-				pgBackup   *backup = parray_get(backup_list, i);
+				pgBackup   *backup = (pgBackup*)parray_get(backup_list, i);
 
 				/*
 				 * Only valid backups made before switchpoint
@@ -2178,7 +2178,7 @@ get_oldest_backup(timelineInfo *tlinfo)
 	{
 		for (i = 0; i < parray_num(backup_list); i++)
 		{
-			pgBackup   *backup = parray_get(backup_list, i);
+			pgBackup   *backup = (pgBackup*)parray_get(backup_list, i);
 
 			/* Backups with invalid START LSN can be safely skipped */
 			if (XLogRecPtrIsInvalid(backup->start_lsn) ||
@@ -2304,7 +2304,7 @@ add_note(pgBackup *target_backup, char *note)
 		 * we save only "aaa"
 		 * Example: tests.set_backup.SetBackupTest.test_add_note_newlines
 		 */
-		note_string = pgut_malloc(MAX_NOTE_SIZE);
+		note_string = (char *) pgut_malloc(MAX_NOTE_SIZE);
 		sscanf(note, "%[^\n]", note_string);
 
 		target_backup->note = note_string;
@@ -2509,7 +2509,7 @@ write_backup_filelist(pgBackup *backup, parray *files, const char *root,
 		elog(ERROR, "Cannot change mode of \"%s\": %s", control_path_temp,
 			 strerror(errno));
 
-	buf = pgut_malloc(BUFFERSZ);
+	buf = (char *) pgut_malloc(BUFFERSZ);
 	setvbuf(out, buf, _IOFBF, BUFFERSZ);
 
 	if (sync)

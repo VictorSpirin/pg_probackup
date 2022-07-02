@@ -83,7 +83,7 @@ init_logger(const char *root_path, LoggerConfig *config)
 	if (config->log_level_file != LOG_OFF
 		&& config->log_directory == NULL)
 	{
-		config->log_directory = pgut_malloc(MAXPGPATH);
+		config->log_directory = (char*)pgut_malloc(MAXPGPATH);
 		join_path_components(config->log_directory,
 							 root_path, LOG_DIRECTORY_DEFAULT);
 	}
@@ -623,7 +623,8 @@ logfile_getname(const char *format, time_t timestamp)
 
 	/* Treat log_filename as a strftime pattern */
 #ifdef WIN32
-	if (pg_strftime(filename + len, MAXPGPATH - len, format, tm) <= 0)
+	// vvs if (pg_strftime(filename + len, MAXPGPATH - len, format, (pg_tm*)tm) <= 0)
+	if (strftime(filename + len, MAXPGPATH - len, format, tm) <= 0)
 #else
 	if (strftime(filename + len, MAXPGPATH - len, format, tm) <= 0)
 #endif

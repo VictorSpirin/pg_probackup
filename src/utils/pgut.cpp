@@ -164,7 +164,7 @@ escapeConnectionParameter(const char *src)
 	 * Allocate a buffer large enough for the worst case that all the source
 	 * characters need to be escaped, plus quotes.
 	 */
-	dstbuf = pg_malloc(strlen(src) * 2 + 2 + 1);
+	dstbuf = (char*)pg_malloc(strlen(src) * 2 + 2 + 1);
 
 	dst = dstbuf;
 	if (need_quotes)
@@ -332,8 +332,8 @@ pgut_connect_replication(const char *host, const char *port,
 
 	i = 0;
 
-	keywords = pg_malloc0((argcount + 1) * sizeof(*keywords));
-	values = pg_malloc0((argcount + 1) * sizeof(*values));
+	keywords = (const char**)pg_malloc0((argcount + 1) * sizeof(*keywords));
+	values = (const char**)pg_malloc0((argcount + 1) * sizeof(*values));
 
 
 	keywords[i] = "dbname";
@@ -912,7 +912,7 @@ pgut_malloc(size_t size)
 {
 	char *ret;
 
-	if ((ret = malloc(size)) == NULL)
+	if ((ret = (char*)malloc(size)) == NULL)
 		elog(ERROR, "could not allocate memory (%lu bytes): %s",
 			(unsigned long) size, strerror(errno));
 	return ret;
@@ -923,7 +923,7 @@ pgut_malloc0(size_t size)
 {
 	char *ret;
 
-	ret = pgut_malloc(size);
+	ret = (char*)pgut_malloc(size);
 	memset(ret, 0, size);
 
 	return ret;
@@ -934,7 +934,7 @@ pgut_realloc(void *p, size_t size)
 {
 	char *ret;
 
-	if ((ret = realloc(p, size)) == NULL)
+	if ((ret = (char*)realloc(p, size)) == NULL)
 		elog(ERROR, "could not re-allocate memory (%lu bytes): %s",
 			(unsigned long) size, strerror(errno));
 	return ret;
@@ -967,7 +967,7 @@ pgut_strndup(const char *str, size_t n)
 		elog(ERROR, "could not duplicate string \"%s\": %s",
 			str, strerror(errno));
 #else /* WINDOWS doesn't have strndup() */
-        if ((ret = malloc(n + 1)) == NULL)
+        if ((ret = (char*)malloc(n + 1)) == NULL)
 		elog(ERROR, "could not duplicate string \"%s\": %s",
 			str, strerror(errno));
 

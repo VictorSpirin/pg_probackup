@@ -120,7 +120,7 @@ bool launch_agent(void)
 
 	ssh_argc = 0;
 #ifdef WIN32
-	ssh_argv[ssh_argc++] = PROGRAM_NAME_FULL;
+	ssh_argv[ssh_argc++] = (char*)PROGRAM_NAME_FULL;
 	ssh_argv[ssh_argc++] = "ssh";
 	ssh_argc += 2; /* reserve space for pipe descriptors */
 #endif
@@ -160,13 +160,13 @@ bool launch_agent(void)
 	if (instance_config.remote.path)
 	{
 		char const* probackup = PROGRAM_NAME_FULL;
-		char* sep = strrchr(probackup, '/');
+		char* sep = strrchr((char*)probackup, '/');
 		if (sep != NULL) {
 			probackup = sep + 1;
 		}
 #ifdef WIN32
 		else {
-			sep = strrchr(probackup, '\\');
+			sep = strrchr((char*)probackup, '\\');
 			if (sep != NULL) {
 				probackup = sep + 1;
 			}

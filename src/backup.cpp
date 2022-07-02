@@ -297,10 +297,10 @@ do_backup_pg(InstanceState *instanceState, PGconn *backup_conn,
 			/* External dirs numeration starts with 1.
 			 * 0 value is not external dir */
 			if (fio_is_remote(FIO_DB_HOST))
-				fio_list_dir(backup_files_list, parray_get(external_dirs, i),
+				fio_list_dir(backup_files_list, (const char*)parray_get(external_dirs, i),
 							 false, true, false, false, true, i+1);
 			else
-				dir_list_file(backup_files_list, parray_get(external_dirs, i),
+				dir_list_file(backup_files_list, (const char*)parray_get(external_dirs, i),
 							  false, true, false, false, true, i+1, FIO_LOCAL_HOST);
 		}
 	}
@@ -1142,7 +1142,7 @@ get_database_map(PGconn *conn)
 
 		/* get datname */
 		datname = PQgetvalue(res, i, 1);
-		db_entry->datname = pgut_malloc(strlen(datname) + 1);
+		db_entry->datname = (char *) pgut_malloc(strlen(datname) + 1);
 		strcpy(db_entry->datname, datname);
 
 		if (database_map == NULL)
@@ -2012,7 +2012,7 @@ backup_files(void *arg)
 		else
 		{
 			char 	external_dst[MAXPGPATH];
-			char	*external_path = parray_get(arguments->external_dirs,
+			char	*external_path = (char*) parray_get(arguments->external_dirs,
 												file->external_dir_num - 1);
 
 			makeExternalDirPathByNum(external_dst,
@@ -2291,7 +2291,7 @@ check_external_for_tablespaces(parray *external_list, PGconn *backup_conn)
 
 		for (j = 0; j < parray_num(external_list); j++)
 		{
-			char *external_path = parray_get(external_list, j);
+			char *external_path = (char*) parray_get(external_list, j);
 
 			if (path_is_prefix_of_path(external_path, tablespace_path))
 				elog(ERROR, "External directory path (-E option) \"%s\" "
@@ -2311,11 +2311,11 @@ check_external_for_tablespaces(parray *external_list, PGconn *backup_conn)
 
 	for (i = 0; i < parray_num(external_list); i++)
 	{
-		char *external_path = parray_get(external_list, i);
+		char *external_path = (char*) parray_get(external_list, i);
 
 		for (j = 0; j < parray_num(external_list); j++)
 		{
-			char *tmp_external_path = parray_get(external_list, j);
+			char *tmp_external_path = (char*) parray_get(external_list, j);
 
 			/* skip yourself */
 			if (j == i)

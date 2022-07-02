@@ -286,7 +286,7 @@ extractPageMap(const char *archivedir, uint32 wal_seg_size,
 		/* We must find TLI information about final timeline (t3 in example) */
 		for (i = 0; i < parray_num(tli_list); i++)
 		{
-			tmp_tlinfo = parray_get(tli_list, i);
+			tmp_tlinfo = (timelineInfo*)parray_get(tli_list, i);
 
 			if (tmp_tlinfo->tli == end_tli)
 			{
@@ -303,7 +303,7 @@ extractPageMap(const char *archivedir, uint32 wal_seg_size,
 		tmp_tlinfo = end_tlinfo;
 		while (tmp_tlinfo)
 		{
-			lsnInterval *wal_interval = pgut_malloc(sizeof(lsnInterval));
+			lsnInterval *wal_interval = (lsnInterval*)pgut_malloc(sizeof(lsnInterval));
 			wal_interval->tli = tmp_tlinfo->tli;
 
 			if (tmp_tlinfo->tli == end_tli)
@@ -1175,8 +1175,8 @@ InitXLogPageRead(XLogReaderData *reader_data, const char *archivedir,
 static int
 xlog_thread_arg_comp(const void *a1, const void *a2)
 {
-	const xlog_thread_arg *arg1 = a1;
-	const xlog_thread_arg *arg2 = a2;
+	const xlog_thread_arg *arg1 = (xlog_thread_arg*)a1;
+	const xlog_thread_arg *arg2 = (xlog_thread_arg*)a2;
 
 	return arg1->reader_data.xlogsegno - arg2->reader_data.xlogsegno;
 }
@@ -1937,9 +1937,17 @@ static XLogReaderState* WalReaderAllocate(uint32 wal_seg_size, XLogReaderData *r
 {
 
 #if PG_VERSION_NUM >= 130000
+	//vvs: no designated initializers in c++ before 20
+	/*
 	return XLogReaderAllocate(wal_seg_size, NULL,
 								XL_ROUTINE(.page_read = &SimpleXLogPageRead),
 								reader_data);
+								*/
+	XLogReaderRoutine rd;
+	rd.page_read = &SimpleXLogPageRead;
+	return XLogReaderAllocate(wal_seg_size, NULL,
+		&rd,
+		reader_data);
 #elif PG_VERSION_NUM >= 110000
 	return XLogReaderAllocate(wal_seg_size, &SimpleXLogPageRead,
 								reader_data);

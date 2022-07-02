@@ -54,7 +54,7 @@ slurpFile(const char *datadir, const char *path, size_t *filesize, bool safe, fi
 	}
 
 	len = statbuf.st_size;
-	buffer = pg_malloc(len + 1);
+	buffer = (char*)pg_malloc(len + 1);
 
 	if (fio_read(fd, buffer, len) != len)
 	{
@@ -97,7 +97,7 @@ fetchFile(PGconn *conn, const char *filename, size_t *filesize)
 
 	/* Read result to local variables */
 	len = PQgetlength(res, 0, 0);
-	result = pg_malloc(len + 1);
+	result = (char*)pg_malloc(len + 1);
 	memcpy(result, PQgetvalue(res, 0, 0), len);
 	result[len] = '\0';
 

@@ -387,7 +387,7 @@ push_file_internal_uncompressed(const char *wal_file_name, const char *pg_xlog_d
 {
 	FILE	   *in = NULL;
 	int			out = -1;
-	char       *buf = pgut_malloc(OUT_BUF_SIZE); /* 1MB buffer */
+	char       *buf = (char *) pgut_malloc(OUT_BUF_SIZE); /* 1MB buffer */
 	char		from_fullpath[MAXPGPATH];
 	char		to_fullpath[MAXPGPATH];
 	/* partial handling */
@@ -626,7 +626,7 @@ push_file_internal_gz(const char *wal_file_name, const char *pg_xlog_dir,
 {
 	FILE	   *in = NULL;
 	gzFile		out = NULL;
-	char       *buf = pgut_malloc(OUT_BUF_SIZE);
+	char       *buf = (char *) pgut_malloc(OUT_BUF_SIZE);
 	char		from_fullpath[MAXPGPATH];
 	char		to_fullpath[MAXPGPATH];
 	char		to_fullpath_gz[MAXPGPATH];
@@ -919,7 +919,7 @@ setup_push_filelist(const char *archive_status_dir, const char *first_file,
 	parray  *batch_files = parray_new();
 
 	/* guarantee that first filename is in batch list */
-	xlogfile = palloc(sizeof(WALSegno));
+	xlogfile = (WALSegno *) palloc(sizeof(WALSegno));
 	pg_atomic_init_flag(&xlogfile->lock);
 	snprintf(xlogfile->name, MAXFNAMELEN, "%s", first_file);
 	parray_append(batch_files, xlogfile);
@@ -951,7 +951,7 @@ setup_push_filelist(const char *archive_status_dir, const char *first_file,
 		if (strcmp(filename, first_file) == 0)
 			continue;
 
-		xlogfile = palloc(sizeof(WALSegno));
+		xlogfile = (WALSegno *) palloc(sizeof(WALSegno));
 		pg_atomic_init_flag(&xlogfile->lock);
 
 		snprintf(xlogfile->name, MAXFNAMELEN, "%s", filename);
@@ -1210,7 +1210,7 @@ uint32 run_wal_prefetch(const char *prefetch_dir, const char *archive_dir,
 
 	for (segno = first_segno; segno < (first_segno + batch_size); segno++)
 	{
-		WALSegno *xlogfile = palloc(sizeof(WALSegno));
+		WALSegno *xlogfile = (WALSegno *) palloc(sizeof(WALSegno));
 		pg_atomic_init_flag(&xlogfile->lock);
 
 		/* construct filename for WAL segment */
@@ -1508,7 +1508,7 @@ get_wal_file_internal(const char *from_path, const char *to_path, FILE *out,
 	gzFile   gz_in = NULL;
 #endif
 	FILE    *in = NULL;
-	char    *buf = pgut_malloc(OUT_BUF_SIZE); /* 1MB buffer */
+	char    *buf = (char *) pgut_malloc(OUT_BUF_SIZE); /* 1MB buffer */
 	int      exit_code = 0;
 
 	elog(VERBOSE, "Attempting to %s WAL file '%s'",

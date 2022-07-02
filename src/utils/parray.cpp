@@ -52,7 +52,7 @@ parray_expand(parray *array, size_t newsize)
 	if (newsize <= array->alloced)
 		return;
 
-	p = pgut_realloc(array->data, sizeof(void *) * newsize);
+	p = (void**)pgut_realloc(array->data, sizeof(void *) * newsize);
 
 	/* initialize expanded area to NULL */
 	memset(p + array->alloced, 0, (newsize - array->alloced) * sizeof(void *));
@@ -201,7 +201,7 @@ parray_bsearch(parray *array, const void *key, int(*compare)(const void *, const
 int
 parray_bsearch_index(parray *array, const void *key, int(*compare)(const void *, const void *))
 {
-	void **elem = parray_bsearch(array, key, compare);
+	void **elem = (void**)parray_bsearch(array, key, compare);
 	return elem != NULL ? elem - array->data : -1;
 }
 

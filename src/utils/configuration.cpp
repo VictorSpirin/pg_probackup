@@ -204,7 +204,7 @@ longopts_to_optstring(const struct option opts[], const size_t len)
 	char	   *result;
 	char	   *s;
 
-	result = pgut_malloc(len * 2 + 1);
+	result = (char*)pgut_malloc(len * 2 + 1);
 
 	s = result;
 	for (i = 0; i < len; i++)
@@ -285,22 +285,22 @@ assign_option(ConfigOption *opt, const char *optarg, OptionSource src)
 				((option_assign_fn) opt->var)(opt, optarg);
 				return;
 			case 'i':
-				if (parse_int32(optarg, opt->var, opt->flags))
+				if (parse_int32(optarg, (int32*)opt->var, opt->flags))
 					return;
 				message = "a 32bit signed integer";
 				break;
 			case 'u':
-				if (parse_uint32(optarg, opt->var, opt->flags))
+				if (parse_uint32(optarg, (uint32*)opt->var, opt->flags))
 					return;
 				message = "a 32bit unsigned integer";
 				break;
 			case 'I':
-				if (parse_int64(optarg, opt->var, opt->flags))
+				if (parse_int64(optarg, (int64*)opt->var, opt->flags))
 					return;
 				message = "a 64bit signed integer";
 				break;
 			case 'U':
-				if (parse_uint64(optarg, opt->var, opt->flags))
+				if (parse_uint64(optarg, (uint64*)opt->var, opt->flags))
 					return;
 				message = "a 64bit unsigned integer";
 				break;
@@ -321,7 +321,7 @@ assign_option(ConfigOption *opt, const char *optarg, OptionSource src)
 				message = "a valid string";
 				break;
 			case 't':
-				if (parse_time(optarg, opt->var,
+				if (parse_time(optarg, (time_t*)opt->var,
 							   opt->source == SOURCE_FILE))
 					return;
 				message = "a time";
@@ -735,11 +735,11 @@ option_get_value(ConfigOption *opt)
 
 				if (t > 0)
 				{
-					timestamp = palloc(100);
+					timestamp = (char*)palloc(100);
 					time2iso(timestamp, 100, t, false);
 				}
 				else
-					timestamp = palloc0(1 /* just null termination */);
+					timestamp = (char*)palloc0(1 /* just null termination */);
 				return timestamp;
 			}
 		default:
@@ -1171,7 +1171,7 @@ parse_time(const char *value, time_t *result, bool utc_default)
 	char 	   *local_tz = getenv("TZ");
 
 	/* tmp = replace( value, !isalnum, ' ' ) */
-	tmp = pgut_malloc(strlen(value) + + 1);
+	tmp = (char*)pgut_malloc(strlen(value) + + 1);
 	len = 0;
 	fields_num = 1;
 

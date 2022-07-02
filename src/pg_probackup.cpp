@@ -309,7 +309,7 @@ main(int argc, char *argv[])
 
 	PROGRAM_NAME = get_progname(argv[0]);
 	set_pglocale_pgservice(argv[0], PG_TEXTDOMAIN("pg_probackup"));
-	PROGRAM_FULL_PATH = palloc0(MAXPGPATH);
+	PROGRAM_FULL_PATH = (const char *) palloc0(MAXPGPATH);
 
 	/* Get current time */
 	current_time = time(NULL);
@@ -408,7 +408,7 @@ main(int argc, char *argv[])
 			if (arglen + len > allocated)
 			{
 				allocated *= 2;
-				command = repalloc(command, allocated);
+				command = (char *) repalloc(command, allocated);
 			}
 
 			strncpy(command + len, argv[i], arglen);
@@ -1124,7 +1124,7 @@ opt_parser_add_to_parray_helper(parray **list, const char *str)
 	if (*list == NULL)
 		*list =  parray_new();
 
-	elem = pgut_malloc(strlen(str) + 1);
+	elem = (char *) pgut_malloc(strlen(str) + 1);
 	strcpy(elem, str);
 
 	parray_append(*list, elem);

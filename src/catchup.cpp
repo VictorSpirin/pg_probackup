@@ -490,19 +490,20 @@ catchup_multithreaded_copy(int num_threads,
 
 	/* init thread args */
 	threads_args = (catchup_thread_runner_arg *) palloc(sizeof(catchup_thread_runner_arg) * num_threads);
-	for (i = 0; i < num_threads; i++)
-		threads_args[i] = (catchup_thread_runner_arg){
-			.nodeInfo = source_node_info,
-			.from_root = source_pgdata_path,
-			.to_root = dest_pgdata_path,
-			.source_filelist = source_filelist,
-			.dest_filelist = dest_filelist,
-			.sync_lsn = sync_lsn,
-			.backup_mode = backup_mode,
-			.thread_num = i + 1,
-			.transfered_bytes = 0,
-			.completed = false,
-		};
+	for (i = 0; i < num_threads; i++) {
+		threads_args[i].nodeInfo = source_node_info;
+		threads_args[i].from_root = source_pgdata_path;
+		threads_args[i].to_root = dest_pgdata_path;
+		threads_args[i].source_filelist = source_filelist;
+		threads_args[i].dest_filelist = dest_filelist;
+		threads_args[i].sync_lsn = sync_lsn;
+		threads_args[i].backup_mode = backup_mode;
+		threads_args[i].thread_num = i + 1;
+		threads_args[i].transfered_bytes = 0;
+		threads_args[i].completed = false;
+	}
+
+
 
 	/* Run threads */
 	thread_interrupted = false;
@@ -891,7 +892,7 @@ do_catchup(const char *source_pgdata, const char *dest_pgdata, int num_threads, 
 		control_file_elem_index = parray_bsearch_index(source_filelist, &search_key, pgFileCompareRelPathWithExternal);
 		if(control_file_elem_index < 0)
 			elog(ERROR, "\"%s\" not found in \"%s\"\n", XLOG_CONTROL_FILE, source_pgdata);
-		source_pg_control_file = parray_remove(source_filelist, control_file_elem_index);
+		source_pg_control_file = (pgFile*)parray_remove(source_filelist, control_file_elem_index);
 	}
 
 	/* TODO before public release: must be more careful with pg_control.

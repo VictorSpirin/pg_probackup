@@ -34,7 +34,7 @@ static const char *statusName[] =
 const char *
 base36enc(long unsigned int value)
 {
-	const char	base36[36] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+	const char	base36[37] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 	/* log(2**64) / log(36) = 12.38 => max 13 char + '\0' */
 	static char	buffer[14];
 	unsigned int offset = sizeof(buffer);
@@ -53,7 +53,7 @@ base36enc(long unsigned int value)
 char *
 base36enc_dup(long unsigned int value)
 {
-	const char	base36[36] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+	const char	base36[37] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 	/* log(2**64) / log(36) = 12.38 => max 13 char + '\0' */
 	char		buffer[14];
 	unsigned int offset = sizeof(buffer);
@@ -134,7 +134,7 @@ writeControlFile(ControlFileData *ControlFile, const char *path, fio_location lo
 #endif
 
 	/* copy controlFileSize */
-	buffer = pg_malloc0(ControlFileSize);
+	buffer = (char*)pg_malloc0(ControlFileSize);
 	memcpy(buffer, ControlFile, sizeof(ControlFileData));
 
 	/* Write pg_control */
@@ -358,7 +358,7 @@ get_system_dbstate(const char *pgdata_path, fio_location location)
 
 	buffer = slurpFile(pgdata_path, XLOG_CONTROL_FILE, &size, false, location);
 	if (buffer == NULL)
-		return 0;
+		return DB_STARTUP;
 	digestControlFile(&ControlFile, buffer, size);
 	pg_free(buffer);
 
@@ -533,7 +533,7 @@ status2str(BackupStatus status)
 const char *
 status2str_color(BackupStatus status)
 {
-	char *status_str = pgut_malloc(20);
+	char *status_str = (char*)pgut_malloc(20);
 
 	/* UNKNOWN */
 	if (status == BACKUP_STATUS_INVALID)
@@ -556,11 +556,11 @@ status2str_color(BackupStatus status)
 BackupStatus
 str2status(const char *status)
 {
-	BackupStatus i;
+	//BackupStatus i;
 
-	for (i = BACKUP_STATUS_INVALID; i <= BACKUP_STATUS_CORRUPT; i++)
+	for (int i = BACKUP_STATUS_INVALID; i <= BACKUP_STATUS_CORRUPT; i++)
 	{
-		if (pg_strcasecmp(status, statusName[i]) == 0) return i;
+		if (pg_strcasecmp(status, statusName[i]) == 0) return static_cast<BackupStatus>(i);
 	}
 
 	return BACKUP_STATUS_INVALID;

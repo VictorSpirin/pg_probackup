@@ -538,10 +538,10 @@ get_history_streaming(ConnectionOptions *conn_opt, TimeLineID tli, parray *backu
 	/* add backups to each timeline info */
 	for (i = 0; i < parray_num(tli_list); i++)
 	{
-		timelineInfo *tlinfo = parray_get(tli_list, i);
+		timelineInfo *tlinfo = (timelineInfo*)parray_get(tli_list, i);
 		for (j = 0; j < parray_num(backup_list); j++)
 		{
-			pgBackup *backup = parray_get(backup_list, j);
+			pgBackup *backup = (pgBackup*)parray_get(backup_list, j);
 			if (tlinfo->tli == backup->tli)
 			{
 				if (tlinfo->backups == NULL)

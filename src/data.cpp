@@ -41,7 +41,7 @@ zlib_compress(void *dst, size_t dst_size, void const *src, size_t src_size,
 			  int level)
 {
 	uLongf 	compressed_size = dst_size;
-	int 	rc = compress2(dst, &compressed_size, src, src_size,
+	int 	rc = compress2((Bytef*)dst, &compressed_size, (Bytef*)src, src_size,
 					   level);
 
 	return rc == Z_OK ? compressed_size : rc;
@@ -52,7 +52,7 @@ static int32
 zlib_decompress(void *dst, size_t dst_size, void const *src, size_t src_size)
 {
 	uLongf dest_len = dst_size;
-	int 	rc = uncompress(dst, &dest_len, src, src_size);
+	int 	rc = uncompress((Bytef*)dst, &dest_len, (Bytef*)src, src_size);
 
 	return rc == Z_OK ? dest_len : rc;
 }
@@ -82,7 +82,7 @@ do_compress(void *dst, size_t dst_size, void const *src, size_t src_size,
 		}
 #endif
 		case PGLZ_COMPRESS:
-			return pglz_compress(src, src_size, dst, PGLZ_strategy_always);
+			return pglz_compress((const char*)src, src_size, (char*)dst, PGLZ_strategy_always);
 	}
 
 	return -1;
@@ -116,9 +116,9 @@ do_decompress(void *dst, size_t dst_size, void const *src, size_t src_size,
 		case PGLZ_COMPRESS:
 
 #if PG_VERSION_NUM >= 120000
-			return pglz_decompress(src, src_size, dst, dst_size, true);
+			return pglz_decompress((const char*)src, src_size, (char*)dst, dst_size, true);
 #else
-			return pglz_decompress(src, src_size, dst, dst_size);
+			return pglz_decompress(src, src_size, (char*)dst, dst_size);
 #endif
 	}
 
@@ -201,7 +201,7 @@ void
 get_header_errormsg(Page page, char **errormsg)
 {
 	PageHeader  phdr = (PageHeader) page;
-	*errormsg = pgut_malloc(ERRMSG_MAX_LEN);
+	*errormsg = (char*)pgut_malloc(ERRMSG_MAX_LEN);
 
 	if (PageGetPageSize(phdr) != BLCKSZ)
 		snprintf(*errormsg, ERRMSG_MAX_LEN, "page header invalid, "
@@ -248,7 +248,7 @@ void
 get_checksum_errormsg(Page page, char **errormsg, BlockNumber absolute_blkno)
 {
 	PageHeader	phdr = (PageHeader) page;
-	*errormsg = pgut_malloc(ERRMSG_MAX_LEN);
+	*errormsg = (char*)pgut_malloc(ERRMSG_MAX_LEN);
 
 	snprintf(*errormsg, ERRMSG_MAX_LEN,
 			 "page verification failed, "
@@ -827,7 +827,7 @@ restore_data_file(parray *parent_chain, pgFile *dest_file, FILE *out,
 				  XLogRecPtr shift_lsn, datapagemap_t *lsn_map, bool use_headers)
 {
 	size_t total_write_len = 0;
-	char  *in_buf = pgut_malloc(STDIO_BUFSIZE);
+	char  *in_buf = (char*)pgut_malloc(STDIO_BUFSIZE);
 	int    backup_seq = 0;
 
 	/*
@@ -865,7 +865,7 @@ restore_data_file(parray *parent_chain, pgFile *dest_file, FILE *out,
 			backup_seq--;
 
 		/* lookup file in intermediate backup */
-		res_file = parray_bsearch(backup->files, dest_file, pgFileCompareRelPathWithExternal);
+		res_file = (pgFile**)parray_bsearch(backup->files, dest_file, pgFileCompareRelPathWithExternal);
 		tmp_file = (res_file) ? *res_file : NULL;
 
 		/* Destination file is not exists yet at this moment */
@@ -1211,7 +1211,7 @@ restore_non_data_file_internal(FILE *in, FILE *out, pgFile *file,
 							   const char *from_fullpath, const char *to_fullpath)
 {
 	size_t read_len = 0;
-	char  *buf = pgut_malloc(STDIO_BUFSIZE); /* 64kB buffer */
+	char  *buf = (char*)pgut_malloc(STDIO_BUFSIZE); /* 64kB buffer */
 
 	/* copy content */
 	for (;;)
@@ -1277,7 +1277,7 @@ restore_non_data_file(parray *parent_chain, pgBackup *dest_backup,
 			pgFile	**res_file = NULL;
 
 			/* lookup file in intermediate backup */
-			res_file =  parray_bsearch(tmp_backup->files, dest_file, pgFileCompareRelPathWithExternal);
+			res_file = (pgFile**)parray_bsearch(tmp_backup->files, dest_file, pgFileCompareRelPathWithExternal);
 			tmp_file = (res_file) ? *res_file : NULL;
 
 			/*
@@ -1467,7 +1467,7 @@ backup_non_data_file_internal(const char *from_fullpath,
 		setvbuf(out, NULL, _IONBF, BUFSIZ);
 
 		/* allocate 64kB buffer */
-		buf = pgut_malloc(CHUNK_SIZE);
+		buf = (char*)pgut_malloc(CHUNK_SIZE);
 
 		/* copy content and calc CRC */
 		for (;;)
@@ -1900,7 +1900,7 @@ get_checksum_map(const char *fullpath, uint32 checksum_version,
 	setvbuf(in, in_buf, _IOFBF, STDIO_BUFSIZE);
 
 	/* initialize array of checksums */
-	checksum_map = pgut_malloc(n_blocks * sizeof(PageState));
+	checksum_map = (PageState*)pgut_malloc(n_blocks * sizeof(PageState));
 	memset(checksum_map, 0, n_blocks * sizeof(PageState));
 
 	for (blknum = 0; blknum < n_blocks;  blknum++)
@@ -1970,7 +1970,7 @@ get_lsn_map(const char *fullpath, uint32 checksum_version,
 
 	setvbuf(in, in_buf, _IOFBF, STDIO_BUFSIZE);
 
-	lsn_map = pgut_malloc(sizeof(datapagemap_t));
+	lsn_map = (datapagemap_t*)pgut_malloc(sizeof(datapagemap_t));
 	memset(lsn_map, 0, sizeof(datapagemap_t));
 
 	for (blknum = 0; blknum < n_blocks;  blknum++)
@@ -2070,7 +2070,7 @@ open_local_file_rw(const char *to_fullpath, char **out_buf, uint32 buf_size)
 			 strerror(errno));
 
 	/* enable stdio buffering for output file */
-	*out_buf = pgut_malloc(buf_size);
+	*out_buf = (char*)pgut_malloc(buf_size);
 	setvbuf(out, *out_buf, _IOFBF, buf_size);
 
 	return out;
@@ -2127,7 +2127,7 @@ send_pages(const char *to_fullpath, const char *from_fullpath,
 	}
 	else
 	{
-		in_buf = pgut_malloc(STDIO_BUFSIZE);
+		in_buf = (char*)pgut_malloc(STDIO_BUFSIZE);
 		setvbuf(in, in_buf, _IOFBF, STDIO_BUFSIZE);
 	}
 
@@ -2151,12 +2151,19 @@ send_pages(const char *to_fullpath, const char *from_fullpath,
 				out = open_local_file_rw(to_fullpath, &out_buf, STDIO_BUFSIZE);
 
 			header = pgut_new0(BackupPageHeader2);
+
+			/* vvs
 			*header = (BackupPageHeader2){
 					.block = blknum,
 					.pos = cur_pos_out,
 					.lsn = page_st.lsn,
 					.checksum = page_st.checksum,
 			};
+			*/
+			header->block = blknum;
+			header->pos = cur_pos_out;
+			header->lsn = page_st.lsn;
+			header->checksum = page_st.checksum;
 
 			parray_append(harray, header);
 
@@ -2196,7 +2203,9 @@ send_pages(const char *to_fullpath, const char *from_fullpath,
 			(*headers)[i] = *header;
 			pg_free(header);
 		}
-		(*headers)[hdr_num] = (BackupPageHeader2){.pos=cur_pos_out};
+		// vvs(*headers)[hdr_num] = (BackupPageHeader2){.pos=cur_pos_out};
+		(*headers)[hdr_num].pos = cur_pos_out;
+
 	}
 	parray_free(harray);
 
@@ -2266,7 +2275,7 @@ copy_pages(const char *to_fullpath, const char *from_fullpath,
 	}
 	else
 	{
-		in_buf = pgut_malloc(STDIO_BUFSIZE);
+		in_buf = (char*)pgut_malloc(STDIO_BUFSIZE);
 		setvbuf(in, in_buf, _IOFBF, STDIO_BUFSIZE);
 	}
 
@@ -2281,7 +2290,7 @@ copy_pages(const char *to_fullpath, const char *from_fullpath,
 			 strerror(errno));
 
 	/* Enable buffering for output file */
-	out_buf = pgut_malloc(STDIO_BUFSIZE);
+	out_buf = (char*)pgut_malloc(STDIO_BUFSIZE);
 	setvbuf(out, out_buf, _IOFBF, STDIO_BUFSIZE);
 
 	while (blknum < file->n_blocks)
@@ -2408,7 +2417,7 @@ get_data_file_headers(HeaderMap *hdr_map, pgFile *file, uint32 backup_version, b
 	read_len = (file->n_headers+1) * sizeof(BackupPageHeader2);
 
 	/* allocate memory for compressed headers */
-	zheaders = pgut_malloc(file->hdr_size);
+	zheaders = (char*)pgut_malloc(file->hdr_size);
 	memset(zheaders, 0, file->hdr_size);
 
 	if (fread(zheaders, 1, file->hdr_size, in) != file->hdr_size)
@@ -2419,7 +2428,7 @@ get_data_file_headers(HeaderMap *hdr_map, pgFile *file, uint32 backup_version, b
 	}
 
 	/* allocate memory for uncompressed headers */
-	headers = pgut_malloc(read_len);
+	headers = (BackupPageHeader2*)pgut_malloc(read_len);
 	memset(headers, 0, read_len);
 
 	z_len = do_decompress(headers, read_len, zheaders, file->hdr_size,
@@ -2490,7 +2499,7 @@ write_page_headers(BackupPageHeader2 *headers, pgFile *file, HeaderMap *hdr_map,
 	COMP_FILE_CRC32(true, file->hdr_crc, headers, read_len);
 	FIN_FILE_CRC32(true, file->hdr_crc);
 
-	zheaders = pgut_malloc(read_len * 2);
+	zheaders = (char*)pgut_malloc(read_len * 2);
 	memset(zheaders, 0, read_len * 2);
 
 	/* compress headers */
@@ -2510,7 +2519,7 @@ write_page_headers(BackupPageHeader2 *headers, pgFile *file, HeaderMap *hdr_map,
 				 map_path, strerror(errno));
 
 		/* enable buffering for header file */
-		hdr_map->buf = pgut_malloc(LARGE_CHUNK_SIZE);
+		hdr_map->buf = (char*)pgut_malloc(LARGE_CHUNK_SIZE);
 		setvbuf(hdr_map->fp, hdr_map->buf, _IOFBF, LARGE_CHUNK_SIZE);
 
 		/* update file permission */

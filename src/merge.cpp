@@ -796,7 +796,7 @@ merge_chain(InstanceState *instanceState,
 
 		if (full_file->external_dir_num && full_externals)
 		{
-			char *dir_name = parray_get(full_externals, full_file->external_dir_num - 1);
+			char *dir_name = (char*)parray_get(full_externals, full_file->external_dir_num - 1);
 			if (backup_contains_external(dir_name, full_externals))
 				/* Dir already removed*/
 				continue;
@@ -1019,7 +1019,7 @@ merge_files(void *arg)
 				pgBackup   *backup = (pgBackup *) parray_get(arguments->parent_chain, i);
 
 				/* lookup file in intermediate backup */
-				res_file =  parray_bsearch(backup->files, dest_file, pgFileCompareRelPathWithExternal);
+				res_file = (pgFile**)parray_bsearch(backup->files, dest_file, pgFileCompareRelPathWithExternal);
 				file = (res_file) ? *res_file : NULL;
 
 				/* Destination file is not exists yet,
@@ -1053,7 +1053,7 @@ merge_files(void *arg)
 		{
 			pgFile	   **res_file = NULL;
 			pgFile	   *file = NULL;
-			res_file = parray_bsearch(arguments->full_backup->files, dest_file,
+			res_file = (pgFile**)parray_bsearch(arguments->full_backup->files, dest_file,
 										pgFileCompareRelPathWithExternal);
 			file = (res_file) ? *res_file : NULL;
 
@@ -1162,7 +1162,7 @@ get_external_index(const char *key, const parray *list)
 		return -1;
 	for (i = 0; i < parray_num(list); i++)
 	{
-		if (strcmp(key, parray_get(list, i)) == 0)
+		if (strcmp(key, (char*)parray_get(list, i)) == 0)
 			return i + 1;
 	}
 	return -1;
@@ -1179,7 +1179,7 @@ reorder_external_dirs(pgBackup *to_backup, parray *to_external,
 	join_path_components(externaldir_template, to_backup->root_dir, EXTERNAL_DIR);
 	for (i = 0; i < parray_num(to_external); i++)
 	{
-		int from_num = get_external_index(parray_get(to_external, i),
+		int from_num = get_external_index((char*)parray_get(to_external, i),
 										  from_external);
 		if (from_num == -1)
 		{
@@ -1212,7 +1212,7 @@ merge_data_file(parray *parent_chain, pgBackup *full_backup,
 				bool no_sync)
 {
 	FILE   *out = NULL;
-	char   *buffer = pgut_malloc(STDIO_BUFSIZE);
+	char   *buffer = (char*)pgut_malloc(STDIO_BUFSIZE);
 	char    to_fullpath[MAXPGPATH];
 	char    to_fullpath_tmp1[MAXPGPATH]; /* used for restore */
 	char    to_fullpath_tmp2[MAXPGPATH]; /* used for backup */
@@ -1337,7 +1337,7 @@ merge_non_data_file(parray *parent_chain, pgBackup *full_backup,
 		from_backup = (pgBackup *) parray_get(parent_chain, i);
 
 		/* lookup file in intermediate backup */
-		res_file =  parray_bsearch(from_backup->files, dest_file, pgFileCompareRelPathWithExternal);
+		res_file = (pgFile**)parray_bsearch(from_backup->files, dest_file, pgFileCompareRelPathWithExternal);
 		from_file = (res_file) ? *res_file : NULL;
 
 		/*

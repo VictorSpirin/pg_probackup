@@ -817,7 +817,7 @@ restore_chain(pgBackup *dest_backup, parray *parent_chain,
 			elog(LOG, "Restore external directories");
 
 		for (i = 0; i < parray_num(external_dirs); i++)
-			fio_mkdir(parray_get(external_dirs, i),
+			fio_mkdir((char*)parray_get(external_dirs, i),
 					  DIR_PERMISSION, FIO_DB_HOST);
 	}
 
@@ -840,7 +840,7 @@ restore_chain(pgBackup *dest_backup, parray *parent_chain,
 			if (parray_num(external_dirs) < file->external_dir_num - 1)
 				elog(ERROR, "Inconsistent external directory backup metadata");
 
-			external_path = parray_get(external_dirs, file->external_dir_num - 1);
+			external_path = (char*)parray_get(external_dirs, file->external_dir_num - 1);
 			join_path_components(dirpath, external_path, file->rel_path);
 
 			elog(VERBOSE, "Create external directory \"%s\"", dirpath);
@@ -876,7 +876,7 @@ restore_chain(pgBackup *dest_backup, parray *parent_chain,
 		{
 			for (i = 0; i < parray_num(external_dirs); i++)
 			{
-				char *external_path = parray_get(external_dirs, i);
+				char *external_path = (char*)parray_get(external_dirs, i);
 				parray	*external_files = parray_new();
 
 				fio_list_dir(external_files, external_path,
@@ -1059,7 +1059,7 @@ restore_chain(pgBackup *dest_backup, parray *parent_chain,
 			}
 			else
 			{
-				char *external_path = parray_get(external_dirs, dest_file->external_dir_num - 1);
+				char *external_path = (char*)parray_get(external_dirs, dest_file->external_dir_num - 1);
 				join_path_components(to_fullpath, external_path, dest_file->rel_path);
 			}
 
@@ -1106,7 +1106,7 @@ restore_files(void *arg)
 	uint64      n_files;
 	char        to_fullpath[MAXPGPATH];
 	FILE       *out = NULL;
-	char       *out_buf = pgut_malloc(STDIO_BUFSIZE);
+	char       *out_buf = (char*)pgut_malloc(STDIO_BUFSIZE);
 
 	restore_files_arg *arguments = (restore_files_arg *) arg;
 
@@ -1180,7 +1180,7 @@ restore_files(void *arg)
 			join_path_components(to_fullpath, arguments->to_root, dest_file->rel_path);
 		else
 		{
-			char	*external_path = parray_get(arguments->dest_external_dirs,
+			char	*external_path = (char*)parray_get(arguments->dest_external_dirs,
 												dest_file->external_dir_num - 1);
 			join_path_components(to_fullpath, external_path, dest_file->rel_path);
 		}
@@ -1579,13 +1579,13 @@ update_recovery_options(InstanceState *instanceState, pgBackup *backup,
 		}
 
 		if (!buf)
-			buf = pgut_malloc(buf_len_max);
+			buf = (char*)pgut_malloc(buf_len_max);
 
 		/* avoid buffer overflow */
 		if ((buf_len + strlen(line)) >= buf_len_max)
 		{
 			buf_len_max += (buf_len + strlen(line)) *2;
-			buf = pgut_realloc(buf, buf_len_max);
+			buf = (char*)pgut_realloc(buf, buf_len_max);
 		}
 
 		buf_len += snprintf(buf+buf_len, sizeof(line), "%s", line);

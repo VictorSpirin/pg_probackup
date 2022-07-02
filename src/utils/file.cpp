@@ -155,8 +155,8 @@ fio_safestat(const char *path, struct stat *buf)
 {
     int            r;
     WIN32_FILE_ATTRIBUTE_DATA attr;
-
-    r = stat(path, buf);
+	
+    r = _pgstat64(path, buf);
     if (r < 0)
         return r;
 
@@ -305,7 +305,8 @@ fio_open_stream(char const* path, fio_location location)
 			IO_CHECK(fio_read_all(fio_stdin, fio_stdin_buffer, hdr.size), hdr.size);
 #ifdef WIN32
 			f = tmpfile();
-			IO_CHECK(fwrite(f, 1, hdr.size, fio_stdin_buffer), hdr.size);
+			//vvs IO_CHECK(fwrite(f, 1, hdr.size, fio_stdin_buffer), hdr.size);
+			IO_CHECK(fwrite(fio_stdin_buffer, 1, hdr.size, f), hdr.size);
 			SYS_CHECK(fseek(f, 0, SEEK_SET));
 #else
 			f = fmemopen(fio_stdin_buffer, hdr.size, "r");
@@ -765,7 +766,7 @@ fio_seek_impl(int fd, off_t offs)
 
 	if (rc < 0)
 	{
-		async_errormsg = pgut_malloc(ERRMSG_MAX_LEN);
+		async_errormsg = (char*)pgut_malloc(ERRMSG_MAX_LEN);
 		snprintf(async_errormsg, ERRMSG_MAX_LEN, "%s", strerror(errno));
 	}
 }
@@ -837,7 +838,7 @@ fio_write(int fd, void const* buf, size_t size)
 	}
 	else
 	{
-		return durable_write(fd, buf, size);
+		return durable_write(fd, (char*)buf, size);
 	}
 }
 
@@ -847,7 +848,7 @@ fio_write_impl(int fd, void const* buf, size_t size, int out)
 	int rc;
 	fio_header hdr;
 
-	rc = durable_write(fd, buf, size);
+	rc = durable_write(fd, (char*)buf, size);
 
 	hdr.arg = 0;
 	hdr.size = 0;
@@ -889,7 +890,7 @@ fio_write_async(int fd, void const* buf, size_t size)
 		IO_CHECK(fio_write_all(fio_stdout, buf, size), size);
 	}
 	else
-		return durable_write(fd, buf, size);
+		return durable_write(fd, (char*)buf, size);
 
 	return size;
 }
@@ -901,9 +902,9 @@ fio_write_async_impl(int fd, void const* buf, size_t size, int out)
 	if (async_errormsg)
 		return;
 
-	if (durable_write(fd, buf, size) <= 0)
+	if (durable_write(fd, (char*)buf, size) <= 0)
 	{
-		async_errormsg = pgut_malloc(ERRMSG_MAX_LEN);
+		async_errormsg = (char*)pgut_malloc(ERRMSG_MAX_LEN);
 		snprintf(async_errormsg, ERRMSG_MAX_LEN, "%s", strerror(errno));
 	}
 }
@@ -915,18 +916,18 @@ fio_decompress(void* dst, void const* src, size_t size, int compress_alg, char *
 	int32 uncompressed_size = do_decompress(dst, BLCKSZ,
 										    src,
 											size,
-											compress_alg, &internal_errormsg);
+		static_cast<CompressAlg>(compress_alg), &internal_errormsg);
 
 	if (uncompressed_size < 0 && internal_errormsg != NULL)
 	{
-		*errormsg = pgut_malloc(ERRMSG_MAX_LEN);
+		*errormsg = (char*)pgut_malloc(ERRMSG_MAX_LEN);
 		snprintf(*errormsg, ERRMSG_MAX_LEN, "An error occured during decompressing block: %s", internal_errormsg);
 		return -1;
 	}
 
 	if (uncompressed_size != BLCKSZ)
 	{
-		*errormsg = pgut_malloc(ERRMSG_MAX_LEN);
+		*errormsg = (char*)pgut_malloc(ERRMSG_MAX_LEN);
 		snprintf(*errormsg, ERRMSG_MAX_LEN, "Page uncompressed to %d bytes != BLCKSZ", uncompressed_size);
 		return -1;
 	}
@@ -984,7 +985,7 @@ fio_write_compressed_impl(int fd, void const* buf, size_t size, int compress_alg
 
 	if (durable_write(fd, decompressed_buf, decompressed_size) <= 0)
 	{
-		async_errormsg = pgut_malloc(ERRMSG_MAX_LEN);
+		async_errormsg = (char*)pgut_malloc(ERRMSG_MAX_LEN);
 		snprintf(async_errormsg, ERRMSG_MAX_LEN, "%s", strerror(errno));
 	}
 }
@@ -1007,7 +1008,7 @@ fio_check_error_file(FILE* f, char **errmsg)
 
 		if (hdr.size > 0)
 		{
-			*errmsg = pgut_malloc(ERRMSG_MAX_LEN);
+			*errmsg = (char*)pgut_malloc(ERRMSG_MAX_LEN);
 			IO_CHECK(fio_read_all(fio_stdin, *errmsg, hdr.size), hdr.size);
 			return 1;
 		}
@@ -1034,7 +1035,7 @@ fio_check_error_fd(int fd, char **errmsg)
 
 		if (hdr.size > 0)
 		{
-			*errmsg = pgut_malloc(ERRMSG_MAX_LEN);
+			*errmsg = (char*)pgut_malloc(ERRMSG_MAX_LEN);
 			IO_CHECK(fio_read_all(fio_stdin, *errmsg, hdr.size), hdr.size);
 			return 1;
 		}
@@ -1504,7 +1505,7 @@ fio_check_error_fd_gz(gzFile f, char **errmsg)
 
 		if (hdr.size > 0)
 		{
-			*errmsg = pgut_malloc(ERRMSG_MAX_LEN);
+			*errmsg = (char*)pgut_malloc(ERRMSG_MAX_LEN);
 			IO_CHECK(fio_read_all(fio_stdin, *errmsg, hdr.size), hdr.size);
 			return 1;
 		}
@@ -1872,7 +1873,7 @@ fio_send_pages(const char *to_fullpath, const char *from_fullpath, pgFile *file,
 	req.arg.clevel = clevel;
 	req.arg.path_len = strlen(from_fullpath) + 1;
 
-	file->compress_alg = calg; /* TODO: wtf? why here? */
+	file->compress_alg = static_cast<CompressAlg>(calg); /* TODO: wtf? why here? */
 
 //<-----
 //	datapagemap_iterator_t *iter;
@@ -1908,7 +1909,7 @@ fio_send_pages(const char *to_fullpath, const char *from_fullpath, pgFile *file,
 			if (hdr.size > 0)
 			{
 				IO_CHECK(fio_read_all(fio_stdin, buf, hdr.size), hdr.size);
-				*errormsg = pgut_malloc(hdr.size);
+				*errormsg = (char*)pgut_malloc(hdr.size);
 				snprintf(*errormsg, hdr.size, "%s", buf);
 			}
 
@@ -1921,7 +1922,7 @@ fio_send_pages(const char *to_fullpath, const char *from_fullpath, pgFile *file,
 			if (hdr.size > 0)
 			{
 				IO_CHECK(fio_read_all(fio_stdin, buf, hdr.size), hdr.size);
-				*errormsg = pgut_malloc(hdr.size);
+				*errormsg = (char*)pgut_malloc(hdr.size);
 				snprintf(*errormsg, hdr.size, "%s", buf);
 			}
 			return PAGE_CORRUPTION;
@@ -1934,7 +1935,7 @@ fio_send_pages(const char *to_fullpath, const char *from_fullpath, pgFile *file,
 			/* receive headers if any */
 			if (hdr.size > 0)
 			{
-				*headers = pgut_malloc(hdr.size);
+				*headers = (BackupPageHeader2*)pgut_malloc(hdr.size);
 				IO_CHECK(fio_read_all(fio_stdin, *headers, hdr.size), hdr.size);
 				file->n_headers = (hdr.size / sizeof(BackupPageHeader2)) -1;
 			}
@@ -2039,7 +2040,7 @@ fio_copy_pages(const char *to_fullpath, const char *from_fullpath, pgFile *file,
 	req.arg.clevel = clevel;
 	req.arg.path_len = strlen(from_fullpath) + 1;
 
-	file->compress_alg = calg; /* TODO: wtf? why here? */
+	file->compress_alg = static_cast<CompressAlg>(calg); /* TODO: wtf? why here? */
 
 //<-----
 //	datapagemap_iterator_t *iter;
@@ -2077,7 +2078,7 @@ fio_copy_pages(const char *to_fullpath, const char *from_fullpath, pgFile *file,
 
 	if (!fio_is_remote_file(out))
 	{
-		out_buf = pgut_malloc(STDIO_BUFSIZE);
+		out_buf = (char*)pgut_malloc(STDIO_BUFSIZE);
 		setvbuf(out, out_buf, _IOFBF, STDIO_BUFSIZE);
 	}
 
@@ -2096,7 +2097,7 @@ fio_copy_pages(const char *to_fullpath, const char *from_fullpath, pgFile *file,
 			if (hdr.size > 0)
 			{
 				IO_CHECK(fio_read_all(fio_stdin, buf, hdr.size), hdr.size);
-				*errormsg = pgut_malloc(hdr.size);
+				*errormsg = (char*)pgut_malloc(hdr.size);
 				snprintf(*errormsg, hdr.size, "%s", buf);
 			}
 
@@ -2109,7 +2110,7 @@ fio_copy_pages(const char *to_fullpath, const char *from_fullpath, pgFile *file,
 			if (hdr.size > 0)
 			{
 				IO_CHECK(fio_read_all(fio_stdin, buf, hdr.size), hdr.size);
-				*errormsg = pgut_malloc(hdr.size);
+				*errormsg = (char*)pgut_malloc(hdr.size);
 				snprintf(*errormsg, hdr.size, "%s", buf);
 			}
 			return PAGE_CORRUPTION;
@@ -2122,7 +2123,7 @@ fio_copy_pages(const char *to_fullpath, const char *from_fullpath, pgFile *file,
 			/* receive headers if any */
 			if (hdr.size > 0)
 			{
-				char *tmp = pgut_malloc(hdr.size);
+				char *tmp = (char*)pgut_malloc(hdr.size);
 				IO_CHECK(fio_read_all(fio_stdin, tmp, hdr.size), hdr.size);
 				pg_free(tmp);
 			}
@@ -2217,7 +2218,7 @@ fio_send_pages_impl(int out, char* buf)
 		else
 		{
 			hdr.arg = OPEN_FAILED;
-			errormsg = pgut_malloc(ERRMSG_MAX_LEN);
+			errormsg = (char*)pgut_malloc(ERRMSG_MAX_LEN);
 			/* Construct the error message */
 			snprintf(errormsg, ERRMSG_MAX_LEN, "Cannot open file \"%s\": %s",
 					 from_fullpath, strerror(errno));
@@ -2234,7 +2235,7 @@ fio_send_pages_impl(int out, char* buf)
 
 	if (with_pagemap)
 	{
-		map = pgut_malloc(sizeof(datapagemap_t));
+		map = (datapagemap_t*)pgut_malloc(sizeof(datapagemap_t));
 		map->bitmapsize = req->bitmapsize;
 		map->bitmap = (char*) buf + sizeof(fio_send_request) + req->path_len;
 
@@ -2285,7 +2286,7 @@ fio_send_pages_impl(int out, char* buf)
 				hdr.cop = FIO_ERROR;
 				hdr.arg = READ_FAILED;
 
-				errormsg = pgut_malloc(ERRMSG_MAX_LEN);
+				errormsg = (char*)pgut_malloc(ERRMSG_MAX_LEN);
 				/* Construct the error message */
 				snprintf(errormsg, ERRMSG_MAX_LEN, "Cannot read block %u of '%s': %s",
 						blknum, from_fullpath, strerror(errno));
@@ -2364,7 +2365,7 @@ fio_send_pages_impl(int out, char* buf)
 
 			compressed_size = do_compress(write_buffer + sizeof(BackupPageHeader),
 										  sizeof(write_buffer) - sizeof(BackupPageHeader),
-										  read_buffer, BLCKSZ, req->calg, req->clevel,
+										  read_buffer, BLCKSZ, static_cast<CompressAlg>(req->calg), req->clevel,
 										  NULL);
 
 			if (compressed_size <= 0 || compressed_size >= BLCKSZ)
@@ -2451,8 +2452,8 @@ fio_send_file_gz(const char *from_fullpath, const char *to_fullpath, FILE* out, 
 {
 	fio_header hdr;
 	int exit_code = SEND_OK;
-	char *in_buf = pgut_malloc(CHUNK_SIZE);    /* buffer for compressed data */
-	char *out_buf = pgut_malloc(OUT_BUF_SIZE); /* 1MB buffer for decompressed data */
+	char *in_buf = (char*)pgut_malloc(CHUNK_SIZE);    /* buffer for compressed data */
+	char *out_buf = (char*)pgut_malloc(OUT_BUF_SIZE); /* 1MB buffer for decompressed data */
 	size_t path_len = strlen(from_fullpath) + 1;
 	/* decompressor */
 	z_stream *strm = NULL;
@@ -2481,7 +2482,7 @@ fio_send_file_gz(const char *from_fullpath, const char *to_fullpath, FILE* out, 
 			if (hdr.size > 0)
 			{
 				IO_CHECK(fio_read_all(fio_stdin, in_buf, hdr.size), hdr.size);
-				*errormsg = pgut_malloc(hdr.size);
+				*errormsg = (char*)pgut_malloc(hdr.size);
 				snprintf(*errormsg, hdr.size, "%s", in_buf);
 			}
 			exit_code = hdr.arg;
@@ -2497,7 +2498,7 @@ fio_send_file_gz(const char *from_fullpath, const char *to_fullpath, FILE* out, 
 			if (strm == NULL)
 			{
 				/* Initialize decompressor */
-				strm = pgut_malloc(sizeof(z_stream));
+				strm = (z_stream*)pgut_malloc(sizeof(z_stream));
 				memset(strm, 0, sizeof(z_stream));
 
 				/* The fields next_in, avail_in initialized before init */
@@ -2508,7 +2509,7 @@ fio_send_file_gz(const char *from_fullpath, const char *to_fullpath, FILE* out, 
 
 				if (rc != Z_OK)
 				{
-					*errormsg = pgut_malloc(ERRMSG_MAX_LEN);
+					*errormsg = (char*)pgut_malloc(ERRMSG_MAX_LEN);
 					snprintf(*errormsg, ERRMSG_MAX_LEN,
 							"Failed to initialize decompression stream for file '%s': %i: %s",
 							from_fullpath, rc, strm->msg);
@@ -2543,7 +2544,7 @@ fio_send_file_gz(const char *from_fullpath, const char *to_fullpath, FILE* out, 
 				else if (rc != Z_OK)
 				{
 					/* got an error */
-					*errormsg = pgut_malloc(ERRMSG_MAX_LEN);
+					*errormsg = (char*)pgut_malloc(ERRMSG_MAX_LEN);
 					snprintf(*errormsg, ERRMSG_MAX_LEN,
 							"Decompression failed for file '%s': %i: %s",
 							from_fullpath, rc, strm->msg);
@@ -2614,7 +2615,7 @@ fio_send_file(const char *from_fullpath, const char *to_fullpath, FILE* out,
 	fio_header hdr;
 	int exit_code = SEND_OK;
 	size_t path_len = strlen(from_fullpath) + 1;
-	char *buf = pgut_malloc(CHUNK_SIZE);    /* buffer */
+	char *buf = (char*)pgut_malloc(CHUNK_SIZE);    /* buffer */
 
 	hdr.cop = FIO_SEND_FILE;
 	hdr.size = path_len;
@@ -2640,7 +2641,7 @@ fio_send_file(const char *from_fullpath, const char *to_fullpath, FILE* out,
 			if (hdr.size > 0)
 			{
 				IO_CHECK(fio_read_all(fio_stdin, buf, hdr.size), hdr.size);
-				*errormsg = pgut_malloc(hdr.size);
+				*errormsg = (char*)pgut_malloc(hdr.size);
 				snprintf(*errormsg, hdr.size, "%s", buf);
 			}
 			exit_code = hdr.arg;
@@ -2694,7 +2695,7 @@ fio_send_file_impl(int out, char const* path)
 {
 	FILE      *fp;
 	fio_header hdr;
-	char      *buf = pgut_malloc(CHUNK_SIZE);
+	char      *buf = (char*)pgut_malloc(CHUNK_SIZE);
 	size_t	   read_len = 0;
 	char      *errormsg = NULL;
 
@@ -2717,7 +2718,7 @@ fio_send_file_impl(int out, char const* path)
 		else
 		{
 			hdr.arg = OPEN_FAILED;
-			errormsg = pgut_malloc(ERRMSG_MAX_LEN);
+			errormsg = (char*)pgut_malloc(ERRMSG_MAX_LEN);
 			/* Construct the error message */
 			snprintf(errormsg, ERRMSG_MAX_LEN, "Cannot open file '%s': %s", path, strerror(errno));
 			hdr.size = strlen(errormsg) + 1;
@@ -2743,7 +2744,7 @@ fio_send_file_impl(int out, char const* path)
 		if (ferror(fp))
 		{
 			hdr.cop = FIO_ERROR;
-			errormsg = pgut_malloc(ERRMSG_MAX_LEN);
+			errormsg = (char*)pgut_malloc(ERRMSG_MAX_LEN);
 			hdr.arg = READ_FAILED;
 			/* Construct the error message */
 			snprintf(errormsg, ERRMSG_MAX_LEN, "Cannot read from file '%s': %s", path, strerror(errno));
@@ -2788,7 +2789,7 @@ fio_list_dir_internal(parray *files, const char *root, bool exclude,
 {
 	fio_header hdr;
 	fio_list_dir_request req;
-	char *buf = pgut_malloc(CHUNK_SIZE);
+	char *buf = (char*)pgut_malloc(CHUNK_SIZE);
 
 	/* Send to the agent message with parameters for directory listing */
 	snprintf(req.path, MAXPGPATH, "%s", root);
@@ -2843,7 +2844,7 @@ fio_list_dir_internal(parray *files, const char *root, bool exclude,
 			{
 				IO_CHECK(fio_read_all(fio_stdin, buf, fio_file.linked_len), fio_file.linked_len);
 
-				file->linked = pgut_malloc(fio_file.linked_len);
+				file->linked = (char*)pgut_malloc(fio_file.linked_len);
 				snprintf(file->linked, fio_file.linked_len, "%s", buf);
 			}
 
@@ -2981,7 +2982,7 @@ fio_get_checksum_map(const char *fullpath, uint32 checksum_version, int n_blocks
 
 		if (hdr.size > 0)
 		{
-			checksum_map = pgut_malloc(n_blocks * sizeof(PageState));
+			checksum_map = (PageState*)pgut_malloc(n_blocks * sizeof(PageState));
 			memset(checksum_map, 0, n_blocks * sizeof(PageState));
 			IO_CHECK(fio_read_all(fio_stdin, checksum_map, hdr.size * sizeof(PageState)), hdr.size * sizeof(PageState));
 		}
@@ -3046,10 +3047,10 @@ fio_get_lsn_map(const char *fullpath, uint32 checksum_version,
 
 		if (hdr.size > 0)
 		{
-			lsn_map = pgut_malloc(sizeof(datapagemap_t));
+			lsn_map = (datapagemap_t*)pgut_malloc(sizeof(datapagemap_t));
 			memset(lsn_map, 0, sizeof(datapagemap_t));
 
-			lsn_map->bitmap = pgut_malloc(hdr.size);
+			lsn_map->bitmap = (char*)pgut_malloc(hdr.size);
 			lsn_map->bitmapsize = hdr.size;
 
 			IO_CHECK(fio_read_all(fio_stdin, lsn_map->bitmap, hdr.size), hdr.size);

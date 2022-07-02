@@ -99,7 +99,7 @@ do_show(CatalogState *catalogState, InstanceState *instanceState,
 		show_instance_start();
 		for (i = 0; i < parray_num(instances); i++)
 		{
-			InstanceState *instanceState = parray_get(instances, i);
+			InstanceState *instanceState = (InstanceState*)parray_get(instances, i);
 
 			if (interrupted)
 				elog(ERROR, "Interrupted during show");
@@ -524,7 +524,7 @@ show_instance_plain(const char *instance_name, parray *backup_list, bool show_na
 	 */
 	for (i = 0; i < parray_num(backup_list); i++)
 	{
-		pgBackup   *backup = parray_get(backup_list, i);
+		pgBackup   *backup = (pgBackup*)parray_get(backup_list, i);
 		ShowBackendRow *row = &rows[i];
 		int			cur = 0;
 		float		zratio = 1;
@@ -753,7 +753,7 @@ show_instance_json(const char *instance_name, parray *backup_list)
 
 	for (i = 0; i < parray_num(backup_list); i++)
 	{
-		pgBackup   *backup = parray_get(backup_list, i);
+		pgBackup   *backup = (pgBackup*)parray_get(backup_list, i);
 
 		if (i != 0)
 			appendPQExpBufferChar(buf, ',');
@@ -1098,7 +1098,7 @@ show_archive_json(const char *instance_name, uint32 xlog_seg_size,
 			json_add(buf, JT_BEGIN_ARRAY, &json_level);
 			for (j = 0; j < parray_num(tlinfo->backups); j++)
 			{
-				pgBackup *backup = parray_get(tlinfo->backups, j);
+				pgBackup *backup = (pgBackup*)parray_get(tlinfo->backups, j);
 
 				if (j != 0)
 					appendPQExpBufferChar(buf, ',');

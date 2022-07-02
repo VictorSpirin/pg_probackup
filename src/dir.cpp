@@ -297,7 +297,7 @@ pgFileGetCRC(const char *file_path, bool use_crc32c, bool missing_ok)
 
 	/* disable stdio buffering */
 	setvbuf(fp, NULL, _IONBF, BUFSIZ);
-	buf = pgut_malloc(STDIO_BUFSIZE);
+	buf = (char*)pgut_malloc(STDIO_BUFSIZE);
 
 	/* calc CRC of file */
 	for (;;)
@@ -358,7 +358,7 @@ pgFileGetCRCgz(const char *file_path, bool use_crc32c, bool missing_ok)
 			file_path, strerror(errno));
 	}
 
-	buf = pgut_malloc(STDIO_BUFSIZE);
+	buf = (char*)pgut_malloc(STDIO_BUFSIZE);
 
 	/* calc CRC of file */
 	for (;;)
@@ -1423,7 +1423,7 @@ check_external_dir_mapping(pgBackup *backup, bool incremental)
 
 		for (i = 0; i < parray_num(external_dirs_to_restore); i++)
 		{
-			char	    *external_dir = parray_get(external_dirs_to_restore, i);
+			char	    *external_dir = (char*)parray_get(external_dirs_to_restore, i);
 
 			if (strcmp(cell->old_dir, external_dir) == 0)
 			{

@@ -292,7 +292,7 @@ make_pagemap_from_ptrack_2(parray *files,
 		if (filemaps)
 		{
 			dummy_map->path = file->rel_path;
-			res_map = parray_bsearch(filemaps, dummy_map, pgFileMapComparePath);
+			res_map = (page_map_entry**)parray_bsearch(filemaps, dummy_map, pgFileMapComparePath);
 			map = (res_map) ? *res_map : NULL;
 		}
 

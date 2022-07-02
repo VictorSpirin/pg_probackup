@@ -81,7 +81,7 @@ typedef struct pg_indexEntry
 {
 	Oid indexrelid;
 	char *name;
-	char *namespace;
+	char *name_space;
 	bool heapallindexed_is_supported;
 	bool checkunique_is_supported;
 	/* schema where amcheck extension is located */
@@ -103,7 +103,7 @@ pg_indexEntry_free(void *index)
 	if (index_ptr->name)
 		free(index_ptr->name);
 	if (index_ptr->name)
-		free(index_ptr->namespace);
+		free(index_ptr->name_space);
 	if (index_ptr->amcheck_nspname)
 		free(index_ptr->amcheck_nspname);
 
@@ -313,7 +313,7 @@ check_indexes(void *arg)
 		if (progress)
 			elog(INFO, "Thread [%d]. Progress: (%d/%d). Amchecking index '%s.%s'",
 				 arguments->thread_num, i + 1, n_indexes,
-				 ind->namespace, ind->name);
+				 ind->name_space, ind->name);
 
 		if (arguments->conn_arg.conn == NULL)
 		{
@@ -384,11 +384,11 @@ get_index_list(const char *dbname, bool first_db_with_amcheck,
 		return NULL;
 	}
 
-	amcheck_extname = pgut_malloc(strlen(PQgetvalue(res, 0, 0)) + 1);
+	amcheck_extname = (char*)pgut_malloc(strlen(PQgetvalue(res, 0, 0)) + 1);
 	strcpy(amcheck_extname, PQgetvalue(res, 0, 0));
-	amcheck_nspname = pgut_malloc(strlen(PQgetvalue(res, 0, 1)) + 1);
+	amcheck_nspname = (char*)pgut_malloc(strlen(PQgetvalue(res, 0, 1)) + 1);
 	strcpy(amcheck_nspname, PQgetvalue(res, 0, 1));
-	amcheck_extversion = pgut_malloc(strlen(PQgetvalue(res, 0, 2)) + 1);
+	amcheck_extversion = (char*)pgut_malloc(strlen(PQgetvalue(res, 0, 2)) + 1);
 	strcpy(amcheck_extversion, PQgetvalue(res, 0, 2));
 	PQclear(res);
 
@@ -486,24 +486,24 @@ get_index_list(const char *dbname, bool first_db_with_amcheck,
 	{
 		pg_indexEntry *ind = (pg_indexEntry *) pgut_malloc(sizeof(pg_indexEntry));
 		char *name = NULL;
-		char *namespace = NULL;
+		char *name_space = NULL;
 
 		/* index oid */
 		ind->indexrelid = atoll(PQgetvalue(res, i, 0));
 
 		/* index relname */
 		name = PQgetvalue(res, i, 1);
-		ind->name = pgut_malloc(strlen(name) + 1);
+		ind->name = (char*)pgut_malloc(strlen(name) + 1);
 		strcpy(ind->name, name);	/* enough buffer size guaranteed */
 
 		/* index namespace */
-		namespace = PQgetvalue(res, i, 2);
-		ind->namespace = pgut_malloc(strlen(namespace) + 1);
-		strcpy(ind->namespace, namespace);	/* enough buffer size guaranteed */
+		name_space = PQgetvalue(res, i, 2);
+		ind->name_space = (char*)pgut_malloc(strlen(name_space) + 1);
+		strcpy(ind->name_space, name_space);	/* enough buffer size guaranteed */
 
 		ind->heapallindexed_is_supported = heapallindexed_is_supported;
 		ind->checkunique_is_supported = checkunique_is_supported;
-		ind->amcheck_nspname = pgut_malloc(strlen(amcheck_nspname) + 1);
+		ind->amcheck_nspname = (char*)pgut_malloc(strlen(amcheck_nspname) + 1);
 		strcpy(ind->amcheck_nspname, amcheck_nspname);
 		pg_atomic_clear_flag(&ind->lock);
 
@@ -543,7 +543,7 @@ amcheck_one_index(check_indexes_arg *arguments,
 #define HEAPALLINDEXED 1
 #define CHECKUNIQUE 2
 	/* first argument is index oid */
-	params[INDEXRELID] = palloc(64);
+	params[INDEXRELID] = (char*)palloc(64);
 	sprintf(params[INDEXRELID], "%u", ind->indexrelid);
 	/* second argument is heapallindexed */
 	params[HEAPALLINDEXED] = heapallindexed ? "true" : "false";
@@ -560,7 +560,7 @@ amcheck_one_index(check_indexes_arg *arguments,
 	 * Prepare query text with schema name
 	 * +1 for \0 and -2 for %s
 	 */
-	query = palloc(strlen(ind->amcheck_nspname) + strlen(queries[params_count - 1]) + 1 - 2);
+	query = (char*)palloc(strlen(ind->amcheck_nspname) + strlen(queries[params_count - 1]) + 1 - 2);
 	sprintf(query, queries[params_count - 1], ind->amcheck_nspname);
 
 	res = pgut_execute_parallel(arguments->conn_arg.conn,
@@ -571,7 +571,7 @@ amcheck_one_index(check_indexes_arg *arguments,
 	{
 		elog(WARNING, "Thread [%d]. Amcheck failed in database '%s' for index: '%s.%s': %s",
 					   arguments->thread_num, arguments->conn_opt.pgdatabase,
-					   ind->namespace, ind->name, PQresultErrorMessage(res));
+					   ind->name_space, ind->name, PQresultErrorMessage(res));
 
 		pfree(params[INDEXRELID]);
 		pfree(query);
@@ -581,7 +581,7 @@ amcheck_one_index(check_indexes_arg *arguments,
 	else
 		elog(LOG, "Thread [%d]. Amcheck succeeded in database '%s' for index: '%s.%s'",
 				arguments->thread_num,
-				arguments->conn_opt.pgdatabase, ind->namespace, ind->name);
+				arguments->conn_opt.pgdatabase, ind->name_space, ind->name);
 
 	pfree(params[INDEXRELID]);
 #undef INDEXRELID
